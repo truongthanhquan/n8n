@@ -25,6 +25,7 @@ const extractFunctions: {
 } = {
 	attribute: ($: Cheerio, valueData: IValueData): string | undefined => $.attr(valueData.attribute!),
 	html: ($: Cheerio, valueData: IValueData): string | undefined => $.html() || undefined,
+	html: ($: Cheerio, valueData: IValueData): string | undefined => $.contents().length > cheerio.html($): undefined,
 	text: ($: Cheerio, valueData: IValueData): string | undefined => $.text(),
 	value: ($: Cheerio, valueData: IValueData): string | undefined => $.val(),
 };
@@ -149,6 +150,11 @@ export class HtmlExtract implements INodeType {
 										name: 'HTML',
 										value: 'html',
 										description: 'Get the HTML the element contains.',
+									},
+									{
+										name: 'OuterHTML',
+										value: 'outerHtml',
+										description: 'Get the OuterHTML the element contains.',
 									},
 									{
 										name: 'Text',
