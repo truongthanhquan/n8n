@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: ${{secrets.ANSIBLE_DELOY_REPOSITORY}}
+          token: ${{secrets.GH_PAT}}
           path: ansible-deploy
 
       # Runs a single command using the runners shell
