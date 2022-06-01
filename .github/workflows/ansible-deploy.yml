@@ -20,13 +20,13 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: ${{secrets.ANSIBLE_DELOY_REPOSITORY}}
-          path: main
+          path: ansible-deploy
 
       # Runs a single command using the runners shell
       - name: Run deploy workflow
         uses: dawidd6/action-ansible-playbook@v2
         with:
-          directory: ./
+          directory: ./ansible-deploy
           key: ${{secrets.SSH_PRIVATE_KEY}}
           inventory: |
             [workflow-server]
