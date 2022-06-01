@@ -25,8 +25,9 @@ jobs:
 
       # Runs a single command using the runners shell
       - name: Run deploy workflow
-        uses: dawidd6/action-ansible-playbook@v2
+        uses: dawidd6/action-ansible-playbook@v2.5
         with:
+          playbook: site.yml
           directory: ./ansible-deploy
           key: ${{secrets.SSH_PRIVATE_KEY}}
           inventory: |
