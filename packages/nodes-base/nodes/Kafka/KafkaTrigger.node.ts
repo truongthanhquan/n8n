@@ -210,7 +210,7 @@ export class KafkaTrigger implements INodeType {
 
 		const schemaRegistryUrl = this.getNodeParameter('schemaRegistryUrl', 0) as string;
 		
-		let acknowledgeMode = options.acknowledge ? options.acknowledge : 'immediately';
+		const acknowledgeMode = options.acknowledge ? options.acknowledge : 'immediately';
 
 		const startConsumer = async () => {
 			await consumer.run({
