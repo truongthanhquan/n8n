@@ -12,6 +12,7 @@ import {
 } from 'n8n-core';
 
 import {
+	createDeferredPromise,
 	IDataObject,
 	INodeType,
 	INodeTypeDescription,
