@@ -260,6 +260,9 @@ export class HtmlExtract implements INodeType {
 
 					const newItem: INodeExecutionData = {
 						json: {},
+						pairedItem: {
+							item: itemIndex,
+						},
 					};
 
 					// Itterate over all the defined values which should be extracted
@@ -283,7 +286,14 @@ export class HtmlExtract implements INodeType {
 				}
 			} catch (error) {
 				if (this.continueOnFail()) {
-					returnData.push({ json: { error: error.message } });
+					returnData.push({
+						json: {
+							error: error.message,
+						},
+						pairedItem: {
+							item: itemIndex,
+						},
+					});
 					continue;
 				}
 				throw error;
