@@ -136,6 +136,25 @@ export class KafkaTrigger implements INodeType {
 						default: false,
 						description: 'Return the headers received from Kafka',
 					},
+					{
+						displayName: 'Delete From Queue When',
+						name: 'acknowledge',
+						type: 'options',
+						options: [
+							{
+								name: 'Execution Finishes',
+								value: 'executionFinishes',
+								description: 'After the workflow execution finished. No matter if the execution was successful or not.',
+							},
+							{
+								name: 'Immediately',
+								value: 'immediately',
+								description: 'As soon as the message got received',
+							},
+						],
+						default: 'immediately',
+						description: 'When to acknowledge the message',
+					},
 				],
 			},
 		],
@@ -188,6 +207,8 @@ export class KafkaTrigger implements INodeType {
 		const useSchemaRegistry = this.getNodeParameter('useSchemaRegistry', 0) as boolean;
 
 		const schemaRegistryUrl = this.getNodeParameter('schemaRegistryUrl', 0) as string;
+		
+		let acknowledgeMode = options.acknowledge ? options.acknowledge : 'immediately';
 
 		const startConsumer = async () => {
 			await consumer.run({
@@ -226,8 +247,19 @@ export class KafkaTrigger implements INodeType {
 						//@ts-ignore
 						data = value;
 					}
+					
+					let responsePromise = undefined;
+					if (acknowledgeMode !== 'immediately') {
+						responsePromise = await createDeferredPromise<IRun>();
+					}
 
-					self.emit([self.helpers.returnJsonArray([data])]);
+					self.emit([self.helpers.returnJsonArray([data])], undefined, responsePromise);
+					
+					if (responsePromise) {
+						// Acknowledge message after the execution finished
+						await responsePromise
+						.promise();
+					}
 				},
 			});
 		};
