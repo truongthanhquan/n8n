@@ -13,10 +13,10 @@ import {
 
 import {
 	createDeferredPromise,
-	IRun,
 	IDataObject,
 	INodeType,
 	INodeTypeDescription,
+	IRun,
 	ITriggerResponse,
 	NodeOperationError,
 } from 'n8n-workflow';
