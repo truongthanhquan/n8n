@@ -154,7 +154,7 @@ export class HtmlExtract implements INodeType {
 									{
 										name: 'OuterHTML',
 										value: 'outerHtml',
-										description: 'Get the OuterHTML the element contains.',
+										description: 'Get the OuterHTML the element contains',
 									},
 									{
 										name: 'Text',
