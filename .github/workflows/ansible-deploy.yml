@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   
   workflow_run:
-    workflows: [Node CI]
+    workflows: [Test Master]
     branches: [master]
     types:
       - completed
