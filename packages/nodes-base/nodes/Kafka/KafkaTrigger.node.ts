@@ -116,7 +116,7 @@ export class KafkaTrigger implements INodeType {
 						displayName: 'Max Number of Requests',
 						name: 'maxInFlightRequests',
 						type: 'number',
-						default: 10000, // The 0 not accept, so we set it to 10k
+						default: 1, // The 0 not accept, so we set it to 1
 						description:
 							'Max number of requests that may be in progress at any time. If falsey then no limit.',
 					},
