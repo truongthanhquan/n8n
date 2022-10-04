@@ -106,7 +106,7 @@
 		</div>
 
 		<div :class="$style.runSelector" v-if="maxRunIndex > 0" v-show="!editMode.enabled">
-			<n8n-select size="small" :value="runIndex" @input="onRunIndexChange" @click.stop>
+			<n8n-select size="small" :value="runIndex" @input="onRunIndexChange" @click.stop popper-append-to-body>
 				<template slot="prepend">{{ $locale.baseText('ndv.output.run') }}</template>
 				<n8n-option v-for="option in (maxRunIndex + 1)" :label="getRunLabel(option)" :value="option - 1" :key="option"></n8n-option>
 			</n8n-select>
@@ -168,7 +168,7 @@
 			</div>
 
 			<div v-else-if="editMode.enabled" :class="$style['edit-mode']">
-				<div :class="$style['edit-mode-body']">
+				<div :class="[$style['edit-mode-body'], 'ignore-key-press']">
 					<code-editor
 						:value="editMode.value"
 						:options="{ scrollBeyondLastLine: false }"
