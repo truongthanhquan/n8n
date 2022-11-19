@@ -9,7 +9,7 @@ on:
   
   workflow_run:
     workflows: [Test Master]
-    branches: [master]
+    branches: [xio-master]
     types:
       - completed
     
@@ -30,6 +30,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: ${{secrets.ANSIBLE_DELOY_REPOSITORY}}
+          ref: xio-master
           token: ${{secrets.GH_PAT}}
           path: ansible-deploy
 
