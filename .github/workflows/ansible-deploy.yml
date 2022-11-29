@@ -30,7 +30,6 @@ jobs:
       - uses: actions/checkout@v3
         with:
           repository: ${{secrets.ANSIBLE_DELOY_REPOSITORY}}
-          ref: master
           token: ${{secrets.GH_PAT}}
           path: ansible-deploy
 
