@@ -169,7 +169,8 @@ export class KafkaTrigger implements INodeType {
 							{
 								name: 'Execution Finishes',
 								value: 'executionFinishes',
-								description: 'After the workflow execution finished. No matter if the execution was successful or not.',
+								description:
+									'After the workflow execution finished. No matter if the execution was successful or not.',
 							},
 							{
 								name: 'Immediately',
@@ -298,8 +299,7 @@ export class KafkaTrigger implements INodeType {
 
 					if (responsePromise) {
 						// Acknowledge message after the execution finished
-						await responsePromise
-						.promise();
+						await responsePromise.promise();
 					}
 				},
 			});
