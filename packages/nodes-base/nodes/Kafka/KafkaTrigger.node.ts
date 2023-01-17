@@ -292,7 +292,7 @@ export class KafkaTrigger implements INodeType {
 						responsePromise = await createDeferredPromise<IRun>();
 					}
 
-					self.emit([self.helpers.returnJsonArray([data])], undefined, responsePromise);
+					this.emit([this.helpers.returnJsonArray([data])], undefined, responsePromise);
 
 					if (responsePromise) {
 						// Acknowledge message after the execution finished
