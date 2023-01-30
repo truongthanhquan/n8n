@@ -1,18 +1,12 @@
-import { Kafka as apacheKafka, KafkaConfig, logLevel, SASLOptions } from 'kafkajs';
+import type { KafkaConfig, SASLOptions } from 'kafkajs';
+import { Kafka as apacheKafka, logLevel } from 'kafkajs';
 
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 
-import { ITriggerFunctions } from 'n8n-core';
+import type { ITriggerFunctions } from 'n8n-core';
 
-import {
-	createDeferredPromise,
-	IDataObject,
-	INodeType,
-	INodeTypeDescription,
-	IRun,
-	ITriggerResponse,
-	NodeOperationError,
-} from 'n8n-workflow';
+import type { IDataObject, INodeType, INodeTypeDescription, IRun, ITriggerResponse } from 'n8n-workflow';
+import { createDeferredPromise, NodeOperationError } from 'n8n-workflow';
 
 export class KafkaTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -272,7 +266,7 @@ export class KafkaTrigger implements INodeType {
 						const headers: { [key: string]: string } = {};
 						for (const key of Object.keys(message.headers)) {
 							const header = message.headers[key];
-							headers[key] = header?.toString('utf8') ?? '';
+							headers[key] = header?.toString('utf8') || '';
 						}
 
 						data.headers = headers;
