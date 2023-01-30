@@ -5,8 +5,8 @@ import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 
 import type { ITriggerFunctions } from 'n8n-core';
 
-import type { IDataObject, INodeType, INodeTypeDescription, ITriggerResponse } from 'n8n-workflow';
-import { NodeOperationError } from 'n8n-workflow';
+import type { IDataObject, INodeType, INodeTypeDescription, IRun, ITriggerResponse } from 'n8n-workflow';
+import { createDeferredPromise, NodeOperationError } from 'n8n-workflow';
 
 export class KafkaTrigger implements INodeType {
 	description: INodeTypeDescription = {
@@ -110,7 +110,7 @@ export class KafkaTrigger implements INodeType {
 						displayName: 'Max Number of Requests',
 						name: 'maxInFlightRequests',
 						type: 'number',
-						default: 1,
+						default: 1, // The 0 not accept, so we set it to 1
 						description:
 							'Max number of requests that may be in progress at any time. If falsey then no limit.',
 					},
@@ -154,6 +154,26 @@ export class KafkaTrigger implements INodeType {
 						default: 30000,
 						description: 'The time to await a response in ms',
 						hint: 'Value in milliseconds',
+					},
+					{
+						displayName: 'Delete From Queue When',
+						name: 'acknowledge',
+						type: 'options',
+						options: [
+							{
+								name: 'Execution Finishes',
+								value: 'executionFinishes',
+								description:
+									'After the workflow execution finished. No matter if the execution was successful or not.',
+							},
+							{
+								name: 'Immediately',
+								value: 'immediately',
+								description: 'As soon as the message got received',
+							},
+						],
+						default: 'immediately',
+						description: 'When to acknowledge the message',
 					},
 				],
 			},
@@ -219,6 +239,8 @@ export class KafkaTrigger implements INodeType {
 
 		const schemaRegistryUrl = this.getNodeParameter('schemaRegistryUrl', 0) as string;
 
+		const acknowledgeMode = options.acknowledge ? options.acknowledge : 'immediately';
+
 		const startConsumer = async () => {
 			await consumer.run({
 				autoCommitInterval: (options.autoCommitInterval as number) || null,
@@ -258,7 +280,18 @@ export class KafkaTrigger implements INodeType {
 						data = value;
 					}
 
-					this.emit([this.helpers.returnJsonArray([data])]);
+
+					let responsePromise = undefined;
+					if (acknowledgeMode !== 'immediately') {
+						responsePromise = await createDeferredPromise<IRun>();
+					}
+
+					this.emit([this.helpers.returnJsonArray([data])], undefined, responsePromise);
+
+					if (responsePromise) {
+						// Acknowledge message after the execution finished
+						await responsePromise.promise();
+					}
 				},
 			});
 		};
