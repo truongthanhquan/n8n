@@ -24,6 +24,18 @@ export class WorkflowPage extends BasePage {
 		canvasNodes: () => cy.getByTestId('canvas-node'),
 		canvasNodeByName: (nodeName: string) =>
 			this.getters.canvasNodes().filter(`:contains("${nodeName}")`),
+		getEndpointSelector: (type: 'input' | 'output' | 'plus', nodeName: string, index = 0) => {
+			return `[data-endpoint-name='${nodeName}'][data-endpoint-type='${type}'][data-input-index='${index}']`
+		},
+		canvasNodeInputEndpointByName: (nodeName: string, index = 0) => {
+			return cy.get(this.getters.getEndpointSelector('input', nodeName, index));
+		},
+		canvasNodeOutputEndpointByName: (nodeName: string, index = 0) => {
+			return cy.get(this.getters.getEndpointSelector('output', nodeName, index));
+		},
+		canvasNodePlusEndpointByName: (nodeName: string, index = 0) => {
+			return cy.get(this.getters.getEndpointSelector('plus', nodeName, index));
+		},
 		successToast: () => cy.get('.el-notification .el-icon-success').parent(),
 		errorToast: () => cy.get('.el-notification .el-icon-error'),
 		activatorSwitch: () => cy.getByTestId('workflow-activate-switch'),
@@ -66,6 +78,8 @@ export class WorkflowPage extends BasePage {
 		workflowSettingsSaveButton: () =>
 			cy.getByTestId('workflow-settings-save-button').find('button'),
 
+		shareButton: () => cy.getByTestId('workflow-share-button').find('button'),
+
 		duplicateWorkflowModal: () => cy.getByTestId('duplicate-modal'),
 		nodeViewBackground: () => cy.getByTestId('node-view-background'),
 		nodeView: () => cy.getByTestId('node-view'),
@@ -80,20 +94,32 @@ export class WorkflowPage extends BasePage {
 		nodeCreatorItems: () => cy.getByTestId('item-iterator-item'),
 		ndvParameters: () => cy.getByTestId('parameter-item'),
 		nodeCredentialsLabel: () => cy.getByTestId('credentials-label'),
+		getConnectionBetweenNodes: (sourceNodeName: string, targetNodeName: string) =>
+			cy.get(`.jtk-connector[data-source-node="${sourceNodeName}"][data-target-node="${targetNodeName}"]`),
+		getConnectionActionsBetweenNodes: (sourceNodeName: string, targetNodeName: string) =>
+			cy.get(`.connection-actions[data-source-node="${sourceNodeName}"][data-target-node="${targetNodeName}"]`),
 	};
 	actions = {
 		visit: () => {
 			cy.visit(this.url);
 			cy.waitForLoad();
 		},
-		addInitialNodeToCanvas: (nodeDisplayName: string) => {
+		addInitialNodeToCanvas: (nodeDisplayName: string, { keepNdvOpen } = { keepNdvOpen: false }) => {
 			this.getters.canvasPlusButton().click();
 			this.getters.nodeCreatorSearchBar().type(nodeDisplayName);
 			this.getters.nodeCreatorSearchBar().type('{enter}');
+			if (keepNdvOpen) return;
 			cy.get('body').type('{esc}');
 		},
-		addNodeToCanvas: (nodeDisplayName: string, preventNdvClose?: boolean) => {
-			this.getters.nodeCreatorPlusButton().click();
+		addNodeToCanvas: (
+			nodeDisplayName: string,
+			plusButtonClick = true,
+			preventNdvClose?: boolean,
+		) => {
+			if (plusButtonClick) {
+				this.getters.nodeCreatorPlusButton().click();
+			}
+
 			this.getters.nodeCreatorSearchBar().type(nodeDisplayName);
 			this.getters.nodeCreatorSearchBar().type('{enter}');
 
@@ -113,8 +139,13 @@ export class WorkflowPage extends BasePage {
 		openWorkflowMenu: () => {
 			this.getters.workflowMenu().click();
 		},
+		openShareModal: () => {
+			this.getters.shareButton().click();
+		},
 		saveWorkflowOnButtonClick: () => {
+			this.getters.saveButton().should('contain', 'Save');
 			this.getters.saveButton().click();
+			this.getters.saveButton().should('contain', 'Saved')
 		},
 		saveWorkflowUsingKeyboardShortcut: () => {
 			cy.get('body').type('{meta}', { release: false }).type('s');
@@ -166,6 +197,15 @@ export class WorkflowPage extends BasePage {
 		},
 		executeWorkflow: () => {
 			this.getters.executeWorkflowButton().click();
+		},
+		addNodeBetweenNodes: (sourceNodeName: string, targetNodeName: string, newNodeName: string) => {
+			this.getters.getConnectionBetweenNodes(sourceNodeName, targetNodeName).first().realHover();
+			this.getters.getConnectionActionsBetweenNodes(sourceNodeName, targetNodeName).find('.add').first().click({ force: true });
+			this.actions.addNodeToCanvas(newNodeName, false);
+		},
+		deleteNodeBetweenNodes: (sourceNodeName: string, targetNodeName: string, newNodeName: string) => {
+			this.getters.getConnectionBetweenNodes(sourceNodeName, targetNodeName).first().realHover();
+			this.getters.getConnectionActionsBetweenNodes(sourceNodeName, targetNodeName).find('.delete').first().click({ force: true });
 		},
 	};
 }
