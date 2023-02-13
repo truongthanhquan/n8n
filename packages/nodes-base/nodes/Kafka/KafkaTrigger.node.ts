@@ -5,7 +5,13 @@ import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 
 import type { ITriggerFunctions } from 'n8n-core';
 
-import type { IDataObject, INodeType, INodeTypeDescription, IRun, ITriggerResponse } from 'n8n-workflow';
+import type {
+	IDataObject,
+	INodeType,
+	INodeTypeDescription,
+	IRun,
+	ITriggerResponse,
+} from 'n8n-workflow';
 import { createDeferredPromise, NodeOperationError } from 'n8n-workflow';
 
 export class KafkaTrigger implements INodeType {
