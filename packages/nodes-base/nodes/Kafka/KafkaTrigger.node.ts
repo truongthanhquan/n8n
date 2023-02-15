@@ -286,7 +286,6 @@ export class KafkaTrigger implements INodeType {
 						data = value;
 					}
 
-
 					let responsePromise = undefined;
 					if (acknowledgeMode !== 'immediately') {
 						responsePromise = await createDeferredPromise<IRun>();
