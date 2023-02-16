@@ -9,7 +9,7 @@ on:
   
   workflow_run:
     workflows: [Test Master]
-    branches: [master]
+    branches: [xio-master]
     types:
       - completed
     
