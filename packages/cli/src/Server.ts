@@ -1,31 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unnecessary-boolean-literal-compare */
 /* eslint-disable @typescript-eslint/no-unnecessary-type-assertion */
-/* eslint-disable @typescript-eslint/no-use-before-define */
-/* eslint-disable @typescript-eslint/await-thenable */
-/* eslint-disable new-cap */
 /* eslint-disable prefer-const */
 /* eslint-disable @typescript-eslint/no-invalid-void-type */
-/* eslint-disable no-return-assign */
-/* eslint-disable no-param-reassign */
-/* eslint-disable consistent-return */
 /* eslint-disable @typescript-eslint/restrict-template-expressions */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable id-denylist */
-/* eslint-disable no-console */
-/* eslint-disable global-require */
 /* eslint-disable @typescript-eslint/no-var-requires */
 /* eslint-disable @typescript-eslint/no-shadow */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-/* eslint-disable no-continue */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable no-restricted-syntax */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable import/no-dynamic-require */
-/* eslint-disable no-await-in-loop */
 
 import { exec as callbackExec } from 'child_process';
 import { access as fsAccess } from 'fs/promises';
@@ -60,7 +44,6 @@ import type {
 	INodeTypeNameVersion,
 	ITelemetrySettings,
 	WorkflowExecuteMode,
-	INodeTypes,
 	ICredentialTypes,
 } from 'n8n-workflow';
 import { LoggerProxy, jsonParse } from 'n8n-workflow';
@@ -78,7 +61,6 @@ import { getSharedWorkflowIds } from '@/WorkflowHelpers';
 import { nodesController } from '@/api/nodes.api';
 import { workflowsController } from '@/workflows/workflows.controller';
 import {
-	AUTH_COOKIE_NAME,
 	EDITOR_UI_DIST_DIR,
 	GENERATED_STATIC_DIR,
 	inDevelopment,
@@ -106,7 +88,6 @@ import {
 	PasswordResetController,
 	UsersController,
 } from '@/controllers';
-import { resolveJwt } from '@/auth/jwt';
 
 import { executionsController } from '@/executions/executions.controller';
 import { nodeTypesController } from '@/api/nodeTypes.api';
@@ -143,7 +124,6 @@ import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
 import type { LoadNodesAndCredentialsClass } from '@/LoadNodesAndCredentials';
 import type { NodeTypesClass } from '@/NodeTypes';
 import { NodeTypes } from '@/NodeTypes';
-import * as Push from '@/Push';
 import * as ResponseHelper from '@/ResponseHelper';
 import type { WaitTrackerClass } from '@/WaitTracker';
 import { WaitTracker } from '@/WaitTracker';
@@ -155,7 +135,9 @@ import { eventBusRouter } from '@/eventbus/eventBusRoutes';
 import { isLogStreamingEnabled } from '@/eventbus/MessageEventBus/MessageEventBusHelper';
 import { getLicense } from '@/License';
 import { licenseController } from './license/license.controller';
-import { corsMiddleware, setupAuthMiddlewares } from './middlewares';
+import type { Push } from '@/push';
+import { getPushInstance, setupPushServer, setupPushHandler } from '@/push';
+import { setupAuthMiddlewares } from './middlewares';
 import { initEvents } from './events';
 import { ldapController } from './Ldap/routes/ldap.controller.ee';
 import { getLdapLoginLabel, isLdapEnabled, isLdapLoginEnabled } from './Ldap/helpers';
@@ -163,6 +145,7 @@ import { AbstractServer } from './AbstractServer';
 import { configureMetrics } from './metrics';
 import { setupBasicAuth } from './middlewares/basicAuth';
 import { setupExternalJWTAuth } from './middlewares/externalJWTAuth';
+import { isSamlEnabled } from './Saml/helpers';
 
 const exec = promisify(callbackExec);
 
@@ -183,7 +166,7 @@ class Server extends AbstractServer {
 
 	credentialTypes: ICredentialTypes;
 
-	push: Push.Push;
+	push: Push;
 
 	constructor() {
 		super();
@@ -198,11 +181,11 @@ class Server extends AbstractServer {
 		this.presetCredentialsLoaded = false;
 		this.endpointPresetCredentials = config.getEnv('credentials.overwrite.endpoint');
 
+		this.push = getPushInstance();
+
 		if (process.env.E2E_TESTS === 'true') {
 			this.app.use('/e2e', require('./api/e2e.api').e2eController);
 		}
-
-		this.push = Push.getInstance();
 
 		const urlBaseWebhook = WebhookHelpers.getWebhookBaseUrl();
 		const telemetrySettings: ITelemetrySettings = {
@@ -280,6 +263,7 @@ class Server extends AbstractServer {
 			},
 			onboardingCallPromptEnabled: config.getEnv('onboardingCallPrompt.enabled'),
 			executionMode: config.getEnv('executions.mode'),
+			pushBackend: config.getEnv('push.backend'),
 			communityNodesEnabled: config.getEnv('nodes.communityPackages.enabled'),
 			deployment: {
 				type: config.getEnv('deployment.type'),
@@ -292,6 +276,7 @@ class Server extends AbstractServer {
 			enterprise: {
 				sharing: false,
 				ldap: false,
+				saml: false,
 				logStreaming: config.getEnv('enterprise.features.logStreaming'),
 			},
 			hideUsagePage: config.getEnv('hideUsagePage'),
@@ -320,6 +305,7 @@ class Server extends AbstractServer {
 			sharing: isSharingEnabled(),
 			logStreaming: isLogStreamingEnabled(),
 			ldap: isLdapEnabled(),
+			saml: isSamlEnabled(),
 		});
 
 		if (isLdapEnabled()) {
@@ -434,26 +420,8 @@ class Server extends AbstractServer {
 		// Parse cookies for easier access
 		this.app.use(cookieParser());
 
-		// Get push connections
-		this.app.use(`/${this.restEndpoint}/push`, corsMiddleware, async (req, res, next) => {
-			const { sessionId } = req.query;
-			if (sessionId === undefined) {
-				next(new Error('The query parameter "sessionId" is missing!'));
-				return;
-			}
-
-			if (isUserManagementEnabled()) {
-				try {
-					const authCookie = req.cookies?.[AUTH_COOKIE_NAME] ?? '';
-					await resolveJwt(authCookie);
-				} catch (error) {
-					res.status(401).send('Unauthorized');
-					return;
-				}
-			}
-
-			this.push.add(sessionId as string, req, res);
-		});
+		const { restEndpoint, app } = this;
+		setupPushHandler(restEndpoint, app, isUserManagementEnabled());
 
 		// Make sure that Vue history mode works properly
 		this.app.use(
@@ -1296,18 +1264,23 @@ class Server extends AbstractServer {
 				},
 			};
 
-			for (const [dir, loader] of Object.entries(this.loadNodesAndCredentials.loaders)) {
-				const pathPrefix = `/icons/${loader.packageName}`;
-				this.app.use(`${pathPrefix}/*/*.(svg|png)`, async (req, res) => {
-					const filePath = pathResolve(dir, req.originalUrl.substring(pathPrefix.length + 1));
+			this.app.use('/icons/:packageName/*/*.(svg|png)', async (req, res) => {
+				const { packageName } = req.params;
+				const loader = this.loadNodesAndCredentials.loaders[packageName];
+				if (loader) {
+					const pathPrefix = `/icons/${packageName}/`;
+					const filePath = pathResolve(
+						loader.directory,
+						req.originalUrl.substring(pathPrefix.length),
+					);
 					try {
 						await fsAccess(filePath);
-						res.sendFile(filePath);
-					} catch {
-						res.sendStatus(404);
-					}
-				});
-			}
+						return res.sendFile(filePath);
+					} catch {}
+				}
+
+				res.sendStatus(404);
+			});
 
 			this.app.use(
 				'/',
@@ -1323,6 +1296,11 @@ class Server extends AbstractServer {
 		} else {
 			this.app.use('/', express.static(GENERATED_STATIC_DIR));
 		}
+	}
+
+	protected setupPushServer(): void {
+		const { restEndpoint, server, app } = this;
+		setupPushServer(restEndpoint, server, app);
 	}
 }
 

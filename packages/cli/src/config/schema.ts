@@ -925,6 +925,15 @@ export const schema = {
 		},
 	},
 
+	push: {
+		backend: {
+			format: ['sse', 'websocket'] as const,
+			default: 'sse',
+			env: 'N8N_PUSH_BACKEND',
+			doc: 'Backend to use for push notifications',
+		},
+	},
+
 	binaryDataManager: {
 		availableModes: {
 			format: String,
@@ -973,6 +982,10 @@ export const schema = {
 				default: false,
 			},
 			ldap: {
+				format: Boolean,
+				default: false,
+			},
+			saml: {
 				format: Boolean,
 				default: false,
 			},
@@ -1030,7 +1043,7 @@ export const schema = {
 				apiHost: {
 					doc: 'API host for PostHog',
 					format: String,
-					default: 'https://app.posthog.com',
+					default: 'https://ph.n8n.io',
 					env: 'N8N_DIAGNOSTICS_POSTHOG_API_HOST',
 				},
 				disableSessionRecording: {
