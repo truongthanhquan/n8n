@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - xio-master
 
 jobs:
   build:
