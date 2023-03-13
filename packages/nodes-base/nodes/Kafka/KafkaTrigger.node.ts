@@ -3,13 +3,12 @@ import { Kafka as apacheKafka, logLevel } from 'kafkajs';
 
 import { SchemaRegistry } from '@kafkajs/confluent-schema-registry';
 
-import type { ITriggerFunctions } from 'n8n-core';
-
 import type {
+	ITriggerFunctions,
 	IDataObject,
 	INodeType,
 	INodeTypeDescription,
-	IRun,
+  IRun,
 	ITriggerResponse,
 } from 'n8n-workflow';
 import { createDeferredPromise, NodeOperationError } from 'n8n-workflow';
