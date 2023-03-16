@@ -8,7 +8,7 @@ import type {
 	IDataObject,
 	INodeType,
 	INodeTypeDescription,
-  IRun,
+	IRun,
 	ITriggerResponse,
 } from 'n8n-workflow';
 import { createDeferredPromise, NodeOperationError } from 'n8n-workflow';
