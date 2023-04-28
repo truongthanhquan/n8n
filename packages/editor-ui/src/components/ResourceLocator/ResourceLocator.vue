@@ -22,10 +22,13 @@
 					<n8n-text color="text-dark" align="center" tag="div">
 						{{ $locale.baseText('resourceLocator.mode.list.error.title') }}
 					</n8n-text>
-					<n8n-text size="small" color="text-base" v-if="hasCredential">
+					<n8n-text size="small" color="text-base" v-if="hasCredential || credentialsNotSet">
 						{{ $locale.baseText('resourceLocator.mode.list.error.description.part1') }}
-						<a @click="openCredential">{{
-							$locale.baseText('resourceLocator.mode.list.error.description.part2')
+						<a v-if="credentialsNotSet" @click="createNewCredential">{{
+							$locale.baseText('resourceLocator.mode.list.error.description.part2.noCredentials')
+						}}</a>
+						<a v-else-if="hasCredential" @click="openCredential">{{
+							$locale.baseText('resourceLocator.mode.list.error.description.part2.hasCredentials')
 						}}</a>
 					</n8n-text>
 				</div>
@@ -135,12 +138,11 @@
 <script lang="ts">
 import mixins from 'vue-typed-mixins';
 
-import {
+import type {
 	ILoadOptions,
 	INode,
 	INodeCredentials,
 	INodeListSearchItems,
-	INodeListSearchResult,
 	INodeParameterResourceLocator,
 	INodeParameters,
 	INodeProperties,
@@ -152,19 +154,26 @@ import DraggableTarget from '@/components/DraggableTarget.vue';
 import ExpressionEdit from '@/components/ExpressionEdit.vue';
 import ParameterIssues from '@/components/ParameterIssues.vue';
 import ResourceLocatorDropdown from './ResourceLocatorDropdown.vue';
-import Vue, { PropType } from 'vue';
-import { INodeUi, IResourceLocatorReqParams, IResourceLocatorResultExpanded } from '@/Interface';
+import type { PropType } from 'vue';
+import type { IResourceLocatorReqParams, IResourceLocatorResultExpanded } from '@/Interface';
 import { debounceHelper } from '@/mixins/debounce';
 import stringify from 'fast-json-stable-stringify';
 import { workflowHelpers } from '@/mixins/workflowHelpers';
 import { nodeHelpers } from '@/mixins/nodeHelpers';
-import { getAppNameFromNodeName, isResourceLocatorValue, hasOnlyListMode } from '@/utils';
+import {
+	getAppNameFromNodeName,
+	isResourceLocatorValue,
+	hasOnlyListMode,
+	getMainAuthField,
+} from '@/utils';
 import { mapStores } from 'pinia';
 import { useUIStore } from '@/stores/ui';
 import { useWorkflowsStore } from '@/stores/workflows';
 import { useRootStore } from '@/stores/n8nRootStore';
 import { useNDVStore } from '@/stores/ndv';
 import { useNodeTypesStore } from '@/stores/nodeTypes';
+
+type ResourceLocatorDropdownRef = InstanceType<typeof ResourceLocatorDropdown>;
 
 interface IResourceLocatorQuery {
 	results: INodeListSearchItems[];
@@ -280,6 +289,17 @@ export default mixins(debounceHelper, workflowHelpers, nodeHelpers).extend({
 				return false;
 			}
 			return !!(node && node.credentials && Object.keys(node.credentials).length === 1);
+		},
+		credentialsNotSet(): boolean {
+			const nodeType = this.nodeTypesStore.getNodeType(this.node?.type);
+			if (nodeType) {
+				const usesCredentials =
+					nodeType.credentials !== undefined && nodeType.credentials.length > 0;
+				if (usesCredentials && !this.node?.credentials) {
+					return true;
+				}
+			}
+			return false;
 		},
 		inputPlaceholder(): string {
 			if (this.currentMode.placeholder) {
@@ -407,9 +427,9 @@ export default mixins(debounceHelper, workflowHelpers, nodeHelpers).extend({
 	watch: {
 		currentQueryError(curr: boolean, prev: boolean) {
 			if (this.showResourceDropdown && curr && !prev) {
-				const input = this.$refs.input;
-				if (input) {
-					(input as HTMLElement).focus();
+				const inputRef = this.$refs.input as HTMLInputElement | undefined;
+				if (inputRef) {
+					inputRef.focus();
 				}
 			}
 		},
@@ -445,7 +465,7 @@ export default mixins(debounceHelper, workflowHelpers, nodeHelpers).extend({
 	},
 	methods: {
 		setWidth() {
-			const containerRef = this.$refs.container as HTMLElement;
+			const containerRef = this.$refs.container as HTMLElement | undefined;
 			if (containerRef) {
 				this.width = containerRef?.offsetWidth;
 			}
@@ -465,9 +485,9 @@ export default mixins(debounceHelper, workflowHelpers, nodeHelpers).extend({
 			this.trackEvent('User refreshed resource locator list');
 		},
 		onKeyDown(e: MouseEvent) {
-			const dropdown = this.$refs.dropdown;
-			if (dropdown && this.showResourceDropdown && !this.isSearchable) {
-				(dropdown as Vue).$emit('keyDown', e);
+			const dropdownRef = this.$refs.dropdown as ResourceLocatorDropdownRef | undefined;
+			if (dropdownRef && this.showResourceDropdown && !this.isSearchable) {
+				dropdownRef.$emit('keyDown', e);
 			}
 		},
 		openResource(url: string) {
@@ -501,6 +521,18 @@ export default mixins(debounceHelper, workflowHelpers, nodeHelpers).extend({
 			}
 			const id = node.credentials[credentialKey].id;
 			this.uiStore.openExistingCredential(id);
+		},
+		createNewCredential(): void {
+			const nodeType = this.nodeTypesStore.getNodeType(this.node?.type);
+			if (!nodeType) {
+				return;
+			}
+			const mainAuthType = getMainAuthField(nodeType);
+			const showAuthSelector =
+				mainAuthType !== null &&
+				Array.isArray(mainAuthType.options) &&
+				mainAuthType.options?.length > 0;
+			this.uiStore.openNewCredential('', showAuthSelector);
 		},
 		findModeByName(name: string): INodePropertyMode | null {
 			if (this.parameter.modes) {

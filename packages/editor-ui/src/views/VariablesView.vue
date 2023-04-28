@@ -7,7 +7,11 @@ import ResourcesListLayout from '@/components/layouts/ResourcesListLayout.vue';
 import VariablesRow from '@/components/VariablesRow.vue';
 
 import { EnterpriseEditionFeature } from '@/constants';
-import { DatatableColumn, EnvironmentVariable, TemporaryEnvironmentVariable } from '@/Interface';
+import type {
+	DatatableColumn,
+	EnvironmentVariable,
+	TemporaryEnvironmentVariable,
+} from '@/Interface';
 import { uid } from 'n8n-design-system/utils';
 import { getVariablesPermissions } from '@/permissions';
 
@@ -236,7 +240,9 @@ function displayName(resource: EnvironmentVariable) {
 					</n8n-button>
 				</div>
 				<template #content>
-					<span v-if="!isFeatureEnabled">{{ i18n.baseText('variables.add.unavailable') }}</span>
+					<span v-if="!isFeatureEnabled">{{
+						i18n.baseText(`variables.add.unavailable${allVariables.length === 0 ? '.empty' : ''}`)
+					}}</span>
 					<span v-else>{{ i18n.baseText('variables.add.onlyOwnerCanCreate') }}</span>
 				</template>
 			</n8n-tooltip>
@@ -257,7 +263,7 @@ function displayName(resource: EnvironmentVariable) {
 		</template>
 		<template v-if="!isFeatureEnabled" #empty>
 			<n8n-action-box
-				data-test-id="empty-resources-list"
+				data-test-id="unavailable-resources-list"
 				emoji="👋"
 				:heading="$locale.baseText(contextBasedTranslationKeys.variables.unavailable.title)"
 				:description="
