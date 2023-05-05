@@ -10,7 +10,6 @@ import type {
 	INodeTypeDescription,
 	IRun,
 	ITriggerResponse,
-	IRun,
 } from 'n8n-workflow';
 import { createDeferredPromise, NodeOperationError } from 'n8n-workflow';
 
