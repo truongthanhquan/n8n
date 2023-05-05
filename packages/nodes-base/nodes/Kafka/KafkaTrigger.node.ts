@@ -8,6 +8,7 @@ import type {
 	IDataObject,
 	INodeType,
 	INodeTypeDescription,
+	IRun,
 	ITriggerResponse,
 	IRun,
 } from 'n8n-workflow';
@@ -115,7 +116,7 @@ export class KafkaTrigger implements INodeType {
 						displayName: 'Max Number of Requests',
 						name: 'maxInFlightRequests',
 						type: 'number',
-						default: 1,
+						default: 1, // The 0 not accept, so we set it to 1
 						description:
 							'The maximum number of unacknowledged requests the client will send on a single connection',
 					},
@@ -172,6 +173,26 @@ export class KafkaTrigger implements INodeType {
 						default: 30000,
 						description: 'The time to await a response in ms',
 						hint: 'Value in milliseconds',
+					},
+					{
+						displayName: 'Delete From Queue When',
+						name: 'acknowledge',
+						type: 'options',
+						options: [
+							{
+								name: 'Execution Finishes',
+								value: 'executionFinishes',
+								description:
+									'After the workflow execution finished. No matter if the execution was successful or not.',
+							},
+							{
+								name: 'Immediately',
+								value: 'immediately',
+								description: 'As soon as the message got received',
+							},
+						],
+						default: 'immediately',
+						description: 'When to acknowledge the message',
 					},
 				],
 			},
@@ -241,6 +262,8 @@ export class KafkaTrigger implements INodeType {
 
 		const schemaRegistryUrl = this.getNodeParameter('schemaRegistryUrl', 0) as string;
 
+		const acknowledgeMode = options.acknowledge ? options.acknowledge : 'immediately';
+
 		const startConsumer = async () => {
 			await consumer.run({
 				autoCommitInterval: (options.autoCommitInterval as number) || null,
@@ -279,6 +302,7 @@ export class KafkaTrigger implements INodeType {
 						//@ts-ignore
 						data = value;
 					}
+
 					let responsePromise = undefined;
 					if (!parallelProcessing && (options.nodeVersion as number) > 1) {
 						responsePromise = await createDeferredPromise<IRun>();
@@ -286,6 +310,7 @@ export class KafkaTrigger implements INodeType {
 					} else {
 						this.emit([this.helpers.returnJsonArray([data])]);
 					}
+
 					if (responsePromise) {
 						await responsePromise.promise();
 					}
