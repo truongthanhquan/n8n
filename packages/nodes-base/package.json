@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-base",
-  "version": "0.229.0",
+  "version": "0.231.0",
   "description": "Base nodes of n8n",
   "license": "SEE LICENSE IN LICENSE.md",
   "homepage": "https://n8n.io",
@@ -623,6 +623,7 @@
       "dist/nodes/Plivo/Plivo.node.js",
       "dist/nodes/PostBin/PostBin.node.js",
       "dist/nodes/Postgres/Postgres.node.js",
+      "dist/nodes/Postgres/PostgresTrigger.node.js",
       "dist/nodes/PostHog/PostHog.node.js",
       "dist/nodes/Postmark/PostmarkTrigger.node.js",
       "dist/nodes/ProfitWell/ProfitWell.node.js",
