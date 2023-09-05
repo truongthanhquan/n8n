@@ -306,6 +306,6 @@ export class HtmlExtract implements INodeType {
 			}
 		}
 
-		return this.prepareOutputData(returnData);
+		return [returnData];
 	}
 }
