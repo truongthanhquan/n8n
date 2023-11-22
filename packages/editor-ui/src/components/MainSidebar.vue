@@ -262,13 +262,12 @@ export default defineComponent({
 					activateOnRouteNames: [VIEWS.EXECUTIONS],
 				},
 				{
-					id: 'workersview',
-					icon: 'truck-monster',
-					label: this.$locale.baseText('mainSidebar.workersView'),
-					position: 'top',
-					available:
-						this.settingsStore.isQueueModeEnabled && this.settingsStore.isWorkerViewAvailable,
-					activateOnRouteNames: [VIEWS.WORKER_VIEW],
+					id: 'cloud-admin',
+					type: 'link',
+					position: 'bottom',
+					label: 'Admin Panel',
+					icon: 'home',
+					available: this.settingsStore.isCloudDeployment && this.usersStore.isInstanceOwner,
 				},
 				{
 					id: 'settings',
@@ -440,12 +439,6 @@ export default defineComponent({
 					}
 					break;
 				}
-				case 'workersview': {
-					if (this.$router.currentRoute.name !== VIEWS.WORKER_VIEW) {
-						this.goToRoute({ name: VIEWS.WORKER_VIEW });
-					}
-					break;
-				}
 				case 'settings': {
 					const defaultRoute = this.findFirstAccessibleSettingsRoute();
 					if (defaultRoute) {
@@ -459,6 +452,10 @@ export default defineComponent({
 				case 'about': {
 					this.trackHelpItemClick('about');
 					this.uiStore.openModal(ABOUT_MODAL_KEY);
+					break;
+				}
+				case 'cloud-admin': {
+					this.cloudPlanStore.redirectToDashboard();
 					break;
 				}
 				case 'quickstart':
