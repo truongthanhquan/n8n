@@ -35,10 +35,7 @@ export type CredentialsGetSharedOptions =
 	| { allowGlobalScope: false };
 
 export class CredentialsService {
-	static async get(
-		where: FindOptionsWhere<ICredentialsDb>,
-		options?: { relations: string[] },
-	): Promise<ICredentialsDb | null> {
+	static async get(where: FindOptionsWhere<ICredentialsDb>, options?: { relations: string[] }) {
 		return Container.get(CredentialsRepository).findOne({
 			relations: options?.relations,
 			where,
@@ -82,23 +79,21 @@ export class CredentialsService {
 		return findManyOptions;
 	}
 
-	private static addOwnedByAndSharedWith(credentials: CredentialsEntity[]) {
-		return credentials.map((c) => Container.get(OwnershipService).addOwnedByAndSharedWith(c));
-	}
-
 	static async getMany(
 		user: User,
 		options: { listQueryOptions?: ListQuery.Options; onlyOwn?: boolean } = {},
 	) {
 		const findManyOptions = this.toFindManyOptions(options.listQueryOptions);
 
-		const returnAll = (await user.hasGlobalScope('credential:list')) && !options.onlyOwn;
+		const returnAll = user.hasGlobalScope('credential:list') && !options.onlyOwn;
 		const isDefaultSelect = !options.listQueryOptions?.select;
 
 		if (returnAll) {
 			const credentials = await Container.get(CredentialsRepository).find(findManyOptions);
 
-			return isDefaultSelect ? this.addOwnedByAndSharedWith(credentials) : credentials;
+			return isDefaultSelect
+				? credentials.map((c) => Container.get(OwnershipService).addOwnedByAndSharedWith(c))
+				: credentials;
 		}
 
 		const ids = await this.getAccessibleCredentials(user.id);
@@ -108,7 +103,9 @@ export class CredentialsService {
 			where: { ...findManyOptions.where, id: In(ids) }, // only accessible credentials
 		});
 
-		return isDefaultSelect ? this.addOwnedByAndSharedWith(credentials) : credentials;
+		return isDefaultSelect
+			? credentials.map((c) => Container.get(OwnershipService).addOwnedByAndSharedWith(c))
+			: credentials;
 	}
 
 	/**
@@ -150,7 +147,7 @@ export class CredentialsService {
 		// Omit user from where if the requesting user has relevant
 		// global credential permissions. This allows the user to
 		// access credentials they don't own.
-		if (!options.allowGlobalScope || !(await user.hasGlobalScope(options.globalScope))) {
+		if (!options.allowGlobalScope || !user.hasGlobalScope(options.globalScope)) {
 			Object.assign(where, {
 				userId: user.id,
 				role: { name: 'owner' },

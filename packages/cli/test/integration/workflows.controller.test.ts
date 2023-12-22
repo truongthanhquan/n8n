@@ -18,17 +18,20 @@ import { saveCredential } from './shared/db/credentials';
 import { createOwner } from './shared/db/users';
 import { createWorkflow } from './shared/db/workflows';
 import { createTag } from './shared/db/tags';
+import { Push } from '@/push';
 
 let owner: User;
 let authOwnerAgent: SuperAgentTest;
 
 jest.spyOn(UserManagementHelpers, 'isSharingEnabled').mockReturnValue(false);
+
 const testServer = utils.setupTestServer({ endpointGroups: ['workflows'] });
 const license = testServer.license;
 
 const { objectContaining, arrayContaining, any } = expect;
 
 const activeWorkflowRunnerLike = mockInstance(ActiveWorkflowRunner);
+mockInstance(Push);
 
 beforeAll(async () => {
 	owner = await createOwner();
@@ -211,7 +214,13 @@ describe('GET /workflows', () => {
 					updatedAt: any(String),
 					tags: [{ id: any(String), name: 'A' }],
 					versionId: any(String),
-					ownedBy: { id: owner.id },
+					ownedBy: {
+						id: owner.id,
+						email: any(String),
+						firstName: any(String),
+						lastName: any(String),
+					},
+					sharedWith: [],
 				}),
 				objectContaining({
 					id: any(String),
@@ -221,7 +230,13 @@ describe('GET /workflows', () => {
 					updatedAt: any(String),
 					tags: [],
 					versionId: any(String),
-					ownedBy: { id: owner.id },
+					ownedBy: {
+						id: owner.id,
+						email: any(String),
+						firstName: any(String),
+						lastName: any(String),
+					},
+					sharedWith: [],
 				}),
 			]),
 		});
@@ -231,7 +246,7 @@ describe('GET /workflows', () => {
 		);
 
 		expect(found.nodes).toBeUndefined();
-		expect(found.sharedWith).toBeUndefined();
+		expect(found.sharedWith).toHaveLength(0);
 		expect(found.usedCredentials).toBeUndefined();
 	});
 
@@ -412,8 +427,26 @@ describe('GET /workflows', () => {
 			expect(response.body).toEqual({
 				count: 2,
 				data: arrayContaining([
-					{ id: any(String), ownedBy: { id: owner.id } },
-					{ id: any(String), ownedBy: { id: owner.id } },
+					{
+						id: any(String),
+						ownedBy: {
+							id: owner.id,
+							email: any(String),
+							firstName: any(String),
+							lastName: any(String),
+						},
+						sharedWith: [],
+					},
+					{
+						id: any(String),
+						ownedBy: {
+							id: owner.id,
+							email: any(String),
+							firstName: any(String),
+							lastName: any(String),
+						},
+						sharedWith: [],
+					},
 				]),
 			});
 		});
