@@ -251,6 +251,38 @@ describe('FilterParameter', () => {
 
 			describe('string', () => {
 				it.each([
+					{ left: null, expected: true },
+					{ left: undefined, expected: true },
+					{ left: '', expected: true },
+					{ left: '🐛', expected: false },
+				])('string:empty($left) === $expected', ({ left, expected }) => {
+					const result = executeFilter(
+						filterFactory({
+							conditions: [
+								{ id: '1', leftValue: left, operator: { operation: 'empty', type: 'string' } },
+							],
+						}),
+					);
+					expect(result).toBe(expected);
+				});
+
+				it.each([
+					{ left: null, expected: false },
+					{ left: undefined, expected: false },
+					{ left: '', expected: false },
+					{ left: '🐛', expected: true },
+				])('string:notEmpty($left) === $expected', ({ left, expected }) => {
+					const result = executeFilter(
+						filterFactory({
+							conditions: [
+								{ id: '1', leftValue: left, operator: { operation: 'notEmpty', type: 'string' } },
+							],
+						}),
+					);
+					expect(result).toBe(expected);
+				});
+
+				it.each([
 					{ left: 'first string', right: 'first string', expected: true },
 					{ left: 'first string', right: 'second string', expected: false },
 					{ left: '', right: '🐛', expected: false },
@@ -431,6 +463,7 @@ describe('FilterParameter', () => {
 					{ left: 'any string', right: '[0-9]', expected: false },
 					{ left: 'any string', right: '[a-z]', expected: true },
 					{ left: 'lowercase', right: '[A-Z]', expected: false },
+					{ left: 'foo', right: '/^fo{2}$/g', expected: true },
 				])('string:regex("$left","$right") === $expected', ({ left, right, expected }) => {
 					const result = executeFilter(
 						filterFactory({
@@ -454,6 +487,7 @@ describe('FilterParameter', () => {
 					{ left: 'any string', right: '[0-9]', expected: true },
 					{ left: 'any string', right: '[a-z]', expected: false },
 					{ left: 'lowercase', right: '[A-Z]', expected: true },
+					{ left: 'foo', right: '/^fo{2}$/g', expected: false },
 				])('string:notRegex("$left","$right") === $expected', ({ left, right, expected }) => {
 					const result = executeFilter(
 						filterFactory({

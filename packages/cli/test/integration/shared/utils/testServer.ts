@@ -12,6 +12,7 @@ import { issueJWT } from '@/auth/jwt';
 import { registerController } from '@/decorators';
 import { rawBodyReader, bodyParser, setupAuthMiddlewares } from '@/middlewares';
 import { PostHogClient } from '@/posthog';
+import { Push } from '@/push';
 import { License } from '@/License';
 import { Logger } from '@/Logger';
 import { InternalHooks } from '@/InternalHooks';
@@ -78,6 +79,7 @@ export const setupTestServer = ({
 	mockInstance(Logger);
 	mockInstance(InternalHooks);
 	mockInstance(PostHogClient);
+	mockInstance(Push);
 
 	const testServer: TestServer = {
 		app,
@@ -247,11 +249,6 @@ export const setupTestServer = ({
 					case 'binaryData':
 						const { BinaryDataController } = await import('@/controllers/binaryData.controller');
 						registerController(app, BinaryDataController);
-						break;
-
-					case 'role':
-						const { RoleController } = await import('@/controllers/role.controller');
-						registerController(app, RoleController);
 						break;
 
 					case 'debug':
