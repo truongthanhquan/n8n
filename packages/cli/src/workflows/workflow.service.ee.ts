@@ -24,6 +24,7 @@ export class EnterpriseWorkflowService {
 		private readonly sharedWorkflowRepository: SharedWorkflowRepository,
 		private readonly workflowRepository: WorkflowRepository,
 		private readonly credentialsRepository: CredentialsRepository,
+		private readonly credentialsService: CredentialsService,
 	) {}
 
 	async isOwned(
@@ -34,10 +35,10 @@ export class EnterpriseWorkflowService {
 			user,
 			workflowId,
 			{ allowGlobalScope: false },
-			['workflow', 'role'],
+			['workflow'],
 		);
 
-		if (!sharing || sharing.role.name !== 'owner') return { ownsWorkflow: false };
+		if (!sharing || sharing.role !== 'workflow:owner') return { ownsWorkflow: false };
 
 		const { workflow } = sharing;
 
@@ -54,7 +55,7 @@ export class EnterpriseWorkflowService {
 		workflow.shared?.forEach(({ user, role }) => {
 			const { id, email, firstName, lastName } = user;
 
-			if (role.name === 'owner') {
+			if (role === 'workflow:owner') {
 				workflow.ownedBy = { id, email, firstName, lastName };
 				return;
 			}
@@ -70,7 +71,7 @@ export class EnterpriseWorkflowService {
 		currentUser: User,
 	): Promise<void> {
 		workflow.usedCredentials = [];
-		const userCredentials = await CredentialsService.getMany(currentUser, { onlyOwn: true });
+		const userCredentials = await this.credentialsService.getMany(currentUser, { onlyOwn: true });
 		const credentialIdsUsedByWorkflow = new Set<string>();
 		workflow.nodes.forEach((node) => {
 			if (!node.credentials) {
@@ -101,7 +102,7 @@ export class EnterpriseWorkflowService {
 			};
 			credential.shared?.forEach(({ user, role }) => {
 				const { id, email, firstName, lastName } = user;
-				if (role.name === 'owner') {
+				if (role === 'credential:owner') {
 					workflowCredential.ownedBy = { id, email, firstName, lastName };
 				} else {
 					workflowCredential.sharedWith?.push({ id, email, firstName, lastName });
@@ -139,7 +140,7 @@ export class EnterpriseWorkflowService {
 			throw new NotFoundError('Workflow not found');
 		}
 
-		const allCredentials = await CredentialsService.getMany(user);
+		const allCredentials = await this.credentialsService.getMany(user);
 
 		try {
 			return this.validateWorkflowCredentialUsage(workflow, previousVersion, allCredentials);

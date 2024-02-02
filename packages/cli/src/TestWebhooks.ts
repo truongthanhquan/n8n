@@ -25,7 +25,7 @@ import * as NodeExecuteFunctions from 'n8n-core';
 import { removeTrailingSlash } from './utils';
 import type { TestWebhookRegistration } from '@/services/test-webhook-registrations.service';
 import { TestWebhookRegistrationsService } from '@/services/test-webhook-registrations.service';
-import { MultiMainSetup } from './services/orchestration/main/MultiMainSetup.ee';
+import { OrchestrationService } from '@/services/orchestration.service';
 import * as WorkflowExecuteAdditionalData from '@/WorkflowExecuteAdditionalData';
 
 @Service()
@@ -34,7 +34,7 @@ export class TestWebhooks implements IWebhookManager {
 		private readonly push: Push,
 		private readonly nodeTypes: NodeTypes,
 		private readonly registrations: TestWebhookRegistrationsService,
-		private readonly multiMainSetup: MultiMainSetup,
+		private readonly orchestrationService: OrchestrationService,
 	) {}
 
 	private timeouts: { [webhookKey: string]: NodeJS.Timeout } = {};
@@ -91,9 +91,11 @@ export class TestWebhooks implements IWebhookManager {
 			});
 		}
 
-		const { destinationNode, sessionId, workflowEntity } = registration;
+		const { destinationNode, sessionId, workflowEntity, webhook: testWebhook } = registration;
 
 		const workflow = this.toWorkflow(workflowEntity);
+
+		if (testWebhook.staticData) workflow.setTestStaticData(testWebhook.staticData);
 
 		const workflowStartNode = workflow.getNode(webhook.node);
 
@@ -144,12 +146,12 @@ export class TestWebhooks implements IWebhookManager {
 			 * the handler process commands the creator process to clear its test webhooks.
 			 */
 			if (
-				this.multiMainSetup.isEnabled &&
+				this.orchestrationService.isMultiMainSetupEnabled &&
 				sessionId &&
 				!this.push.getBackend().hasSessionId(sessionId)
 			) {
 				const payload = { webhookKey: key, workflowEntity, sessionId };
-				void this.multiMainSetup.publish('clear-test-webhooks', payload);
+				void this.orchestrationService.publish('clear-test-webhooks', payload);
 				return;
 			}
 
@@ -405,14 +407,7 @@ export class TestWebhooks implements IWebhookManager {
 			connections: workflowEntity.connections,
 			active: false,
 			nodeTypes: this.nodeTypes,
-
-			/**
-			 * `staticData` in the original workflow entity has production webhook IDs.
-			 * Since we are creating here a temporary workflow only for a test webhook,
-			 * `staticData` from the original workflow entity should not be transferred.
-			 */
-			staticData: undefined,
-
+			staticData: {},
 			settings: workflowEntity.settings,
 		});
 	}

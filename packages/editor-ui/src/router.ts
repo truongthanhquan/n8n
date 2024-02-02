@@ -7,7 +7,7 @@ import type {
 	RouteLocationRaw,
 	RouteLocationNormalized,
 } from 'vue-router';
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory, isNavigationFailure } from 'vue-router';
 import { useExternalHooks } from '@/composables/useExternalHooks';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useTemplatesStore } from '@/stores/templates.store';
@@ -18,6 +18,7 @@ import { useTelemetry } from '@/composables/useTelemetry';
 import { middleware } from '@/rbac/middleware';
 import type { RouteConfig, RouterMiddleware } from '@/types/router';
 import { initializeCore } from '@/init';
+import { tryToParseNumber } from '@/utils/typesUtils';
 
 const ChangePasswordView = async () => await import('./views/ChangePasswordView.vue');
 const ErrorView = async () => await import('./views/ErrorView.vue');
@@ -120,7 +121,9 @@ export const routes = [
 				getProperties(route: RouteLocation) {
 					const templatesStore = useTemplatesStore();
 					return {
-						template_id: route.params.id,
+						template_id: tryToParseNumber(
+							Array.isArray(route.params.id) ? route.params.id[0] : route.params.id,
+						),
 						wf_template_repo_session_id: templatesStore.currentSessionId,
 					};
 				},
@@ -142,7 +145,9 @@ export const routes = [
 				getProperties(route: RouteLocation) {
 					const templatesStore = useTemplatesStore();
 					return {
-						template_id: route.params.id,
+						template_id: tryToParseNumber(
+							Array.isArray(route.params.id) ? route.params.id[0] : route.params.id,
+						),
 						wf_template_repo_session_id: templatesStore.currentSessionId,
 					};
 				},
@@ -784,73 +789,89 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to: RouteLocationNormalized & RouteConfig, from, next) => {
-	/**
-	 * Initialize application core
-	 * This step executes before first route is loaded and is required for permission checks
-	 */
+	try {
+		/**
+		 * Initialize application core
+		 * This step executes before first route is loaded and is required for permission checks
+		 */
 
-	await initializeCore();
+		await initializeCore();
 
-	/**
-	 * Redirect to setup page. User should be redirected to this only once
-	 */
+		/**
+		 * Redirect to setup page. User should be redirected to this only once
+		 */
 
-	const settingsStore = useSettingsStore();
-	if (settingsStore.showSetupPage) {
-		if (to.name === VIEWS.SETUP) {
-			return next();
+		const settingsStore = useSettingsStore();
+		if (settingsStore.showSetupPage) {
+			if (to.name === VIEWS.SETUP) {
+				return next();
+			}
+
+			return next({ name: VIEWS.SETUP });
 		}
 
-		return next({ name: VIEWS.SETUP });
-	}
+		/**
+		 * Verify user permissions for current route
+		 */
 
-	/**
-	 * Verify user permissions for current route
-	 */
+		const routeMiddleware = to.meta?.middleware ?? [];
+		const routeMiddlewareOptions = to.meta?.middlewareOptions ?? {};
+		for (const middlewareName of routeMiddleware) {
+			let nextCalled = false;
+			const middlewareNext = ((location: RouteLocationRaw): void => {
+				next(location);
+				nextCalled = true;
+			}) as NavigationGuardNext;
 
-	const routeMiddleware = to.meta?.middleware ?? [];
-	const routeMiddlewareOptions = to.meta?.middlewareOptions ?? {};
-	for (const middlewareName of routeMiddleware) {
-		let nextCalled = false;
-		const middlewareNext = ((location: RouteLocationRaw): void => {
-			next(location);
-			nextCalled = true;
-		}) as NavigationGuardNext;
+			const middlewareOptions = routeMiddlewareOptions[middlewareName];
+			const middlewareFn = middleware[middlewareName] as RouterMiddleware<unknown>;
+			await middlewareFn(to, from, middlewareNext, middlewareOptions);
 
-		const middlewareOptions = routeMiddlewareOptions[middlewareName];
-		const middlewareFn = middleware[middlewareName] as RouterMiddleware<unknown>;
-		await middlewareFn(to, from, middlewareNext, middlewareOptions);
+			if (nextCalled) {
+				return;
+			}
+		}
 
-		if (nextCalled) {
-			return;
+		return next();
+	} catch (failure) {
+		if (isNavigationFailure(failure)) {
+			console.log(failure);
+		} else {
+			console.error(failure);
 		}
 	}
-
-	return next();
 });
 
 router.afterEach((to, from) => {
-	const telemetry = useTelemetry();
-	const uiStore = useUIStore();
-	const templatesStore = useTemplatesStore();
+	try {
+		const telemetry = useTelemetry();
+		const uiStore = useUIStore();
+		const templatesStore = useTemplatesStore();
 
-	/**
-	 * Run external hooks
-	 */
+		/**
+		 * Run external hooks
+		 */
 
-	void useExternalHooks().run('main.routeChange', { from, to });
+		void useExternalHooks().run('main.routeChange', { from, to });
 
-	/**
-	 * Track current view for telemetry
-	 */
+		/**
+		 * Track current view for telemetry
+		 */
 
-	uiStore.currentView = (to.name as string) ?? '';
-	if (to.meta?.templatesEnabled) {
-		templatesStore.setSessionId();
-	} else {
-		templatesStore.resetSessionId(); // reset telemetry session id when user leaves template pages
+		uiStore.currentView = (to.name as string) ?? '';
+		if (to.meta?.templatesEnabled) {
+			templatesStore.setSessionId();
+		} else {
+			templatesStore.resetSessionId(); // reset telemetry session id when user leaves template pages
+		}
+		telemetry.page(to);
+	} catch (failure) {
+		if (isNavigationFailure(failure)) {
+			console.log(failure);
+		} else {
+			console.error(failure);
+		}
 	}
-	telemetry.page(to);
 });
 
 export default router;

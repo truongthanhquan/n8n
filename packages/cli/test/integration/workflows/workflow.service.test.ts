@@ -3,8 +3,9 @@ import { mock } from 'jest-mock-extended';
 import { ActiveWorkflowRunner } from '@/ActiveWorkflowRunner';
 import { SharedWorkflowRepository } from '@db/repositories/sharedWorkflow.repository';
 import { WorkflowRepository } from '@db/repositories/workflow.repository';
+import { MessageEventBus } from '@/eventbus';
 import { Telemetry } from '@/telemetry';
-import { MultiMainSetup } from '@/services/orchestration/main/MultiMainSetup.ee';
+import { OrchestrationService } from '@/services/orchestration.service';
 import { WorkflowService } from '@/workflows/workflow.service';
 
 import * as testDb from '../shared/testDb';
@@ -13,15 +14,13 @@ import { createOwner } from '../shared/db/users';
 import { createWorkflow } from '../shared/db/workflows';
 
 let workflowService: WorkflowService;
-let activeWorkflowRunner: ActiveWorkflowRunner;
-let multiMainSetup: MultiMainSetup;
+const activeWorkflowRunner = mockInstance(ActiveWorkflowRunner);
+const orchestrationService = mockInstance(OrchestrationService);
+mockInstance(MessageEventBus);
+mockInstance(Telemetry);
 
 beforeAll(async () => {
 	await testDb.init();
-
-	activeWorkflowRunner = mockInstance(ActiveWorkflowRunner);
-	multiMainSetup = mockInstance(MultiMainSetup);
-	mockInstance(Telemetry);
 
 	workflowService = new WorkflowService(
 		mock(),
@@ -33,7 +32,7 @@ beforeAll(async () => {
 		mock(),
 		mock(),
 		mock(),
-		multiMainSetup,
+		orchestrationService,
 		mock(),
 		activeWorkflowRunner,
 	);
@@ -89,7 +88,7 @@ describe('update()', () => {
 		const owner = await createOwner();
 		const workflow = await createWorkflow({ active: true }, owner);
 
-		const publishSpy = jest.spyOn(multiMainSetup, 'publish');
+		const publishSpy = jest.spyOn(orchestrationService, 'publish');
 
 		workflow.active = false;
 		await workflowService.update(owner, workflow, workflow.id);
@@ -109,7 +108,7 @@ describe('update()', () => {
 		const owner = await createOwner();
 		const workflow = await createWorkflow({ active: true }, owner);
 
-		const publishSpy = jest.spyOn(multiMainSetup, 'publish');
+		const publishSpy = jest.spyOn(orchestrationService, 'publish');
 
 		await workflowService.update(owner, workflow, workflow.id);
 

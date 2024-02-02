@@ -18,7 +18,7 @@ import type {
 	Workflow,
 	WorkflowExecuteMode,
 	ExecutionStatus,
-	IExecutionsSummary,
+	ExecutionSummary,
 	FeatureFlags,
 	INodeProperties,
 	IUserSettings,
@@ -31,14 +31,10 @@ import type { WorkflowExecute } from 'n8n-core';
 
 import type PCancelable from 'p-cancelable';
 
-import type { ChildProcess } from 'child_process';
-
-import type { DatabaseType } from '@db/types';
 import type { AuthProviderType } from '@db/entities/AuthIdentity';
-import type { Role } from '@db/entities/Role';
 import type { SharedCredentials } from '@db/entities/SharedCredentials';
 import type { TagEntity } from '@db/entities/TagEntity';
-import type { User } from '@db/entities/User';
+import type { GlobalRole, User } from '@db/entities/User';
 import type { CredentialsRepository } from '@db/repositories/credentials.repository';
 import type { SettingsRepository } from '@db/repositories/settings.repository';
 import type { UserRepository } from '@db/repositories/user.repository';
@@ -170,8 +166,7 @@ export interface IExecutionFlattedResponse extends IExecutionFlatted {
 
 export interface IExecutionsListResponse {
 	count: number;
-	// results: IExecutionShortResponse[];
-	results: IExecutionsSummary[];
+	results: ExecutionSummary[];
 	estimated: boolean;
 }
 
@@ -192,15 +187,8 @@ export interface IExecutionsCurrentSummary {
 	status?: ExecutionStatus;
 }
 
-export interface IExecutionDeleteFilter {
-	deleteBefore?: Date;
-	filters?: IDataObject;
-	ids?: string[];
-}
-
 export interface IExecutingWorkflowData {
 	executionData: IWorkflowExecutionDataProcess;
-	process?: ChildProcess;
 	startedAt: Date;
 	postExecutePromises: Array<IDeferredPromise<IRun | undefined>>;
 	responsePromise?: IDeferredPromise<IExecuteResponsePromiseData>;
@@ -276,37 +264,6 @@ export interface IWebhookManager {
 	) => Promise<WebhookAccessControlOptions | undefined>;
 
 	executeWebhook(req: WebhookRequest, res: Response): Promise<IResponseCallbackData>;
-}
-
-export interface IDiagnosticInfo {
-	versionCli: string;
-	databaseType: DatabaseType;
-	notificationsEnabled: boolean;
-	disableProductionWebhooksOnMainProcess: boolean;
-	systemInfo: {
-		os: {
-			type?: string;
-			version?: string;
-		};
-		memory?: number;
-		cpus: {
-			count?: number;
-			model?: string;
-			speed?: number;
-		};
-	};
-	executionVariables: {
-		[key: string]: string | number | boolean | undefined;
-	};
-	deploymentType: string;
-	binaryDataMode: string;
-	smtp_set_up: boolean;
-	ldap_allowed: boolean;
-	saml_enabled: boolean;
-	binary_data_s3: boolean;
-	multi_main_setup_enabled: boolean;
-	licensePlanName?: string;
-	licenseTenantId?: number;
 }
 
 export interface ITelemetryUserDeletionData {
@@ -566,11 +523,6 @@ export interface IWorkflowErrorData {
 	};
 }
 
-export interface IProcessMessageDataHook {
-	hook: string;
-	parameters: any[];
-}
-
 export interface IWorkflowExecutionDataProcess {
 	destinationNode?: string;
 	restartExecutionId?: string;
@@ -582,11 +534,6 @@ export interface IWorkflowExecutionDataProcess {
 	sessionId?: string;
 	startNodes?: string[];
 	workflowData: IWorkflowBase;
-	userId: string;
-}
-
-export interface IWorkflowExecutionDataProcessWithExecution extends IWorkflowExecutionDataProcess {
-	executionId: string;
 	userId: string;
 }
 
@@ -667,6 +614,7 @@ export interface ILicensePostResponse extends ILicenseReadResponse {
 
 export interface JwtToken {
 	token: string;
+	/** The amount of seconds after which the JWT will expire. **/
 	expiresIn: number;
 }
 
@@ -687,7 +635,7 @@ export interface PublicUser {
 	createdAt: Date;
 	isPending: boolean;
 	hasRecoveryCodesLeft: boolean;
-	globalRole?: Role;
+	role?: GlobalRole;
 	globalScopes?: Scope[];
 	signInType: AuthProviderType;
 	disabled: boolean;

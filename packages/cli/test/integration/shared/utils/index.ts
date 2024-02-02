@@ -11,14 +11,15 @@ import { v4 as uuid } from 'uuid';
 
 import config from '@/config';
 import { WorkflowEntity } from '@db/entities/WorkflowEntity';
-import { AUTH_COOKIE_NAME } from '@/constants';
-
-import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
 import { SettingsRepository } from '@db/repositories/settings.repository';
-import { mockNodeTypesData } from '../../../unit/Helpers';
-import { MultiMainSetup } from '@/services/orchestration/main/MultiMainSetup.ee';
-import { mockInstance } from '../../../shared/mocking';
+import { AUTH_COOKIE_NAME } from '@/constants';
 import { ExecutionService } from '@/executions/execution.service';
+import { LoadNodesAndCredentials } from '@/LoadNodesAndCredentials';
+import { Push } from '@/push';
+import { OrchestrationService } from '@/services/orchestration.service';
+
+import { mockNodeTypesData } from '../../../unit/Helpers';
+import { mockInstance } from '../../../shared/mocking';
 
 export { setupTestServer } from './testServer';
 
@@ -30,7 +31,8 @@ export { setupTestServer } from './testServer';
  * Initialize node types.
  */
 export async function initActiveWorkflowRunner() {
-	mockInstance(MultiMainSetup);
+	mockInstance(Push);
+	mockInstance(OrchestrationService);
 
 	mockInstance(ExecutionService);
 	const { ActiveWorkflowRunner } = await import('@/ActiveWorkflowRunner');

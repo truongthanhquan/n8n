@@ -3,12 +3,9 @@ import type { SuperAgentTest } from 'supertest';
 import { v4 as uuid } from 'uuid';
 import type { INode } from 'n8n-workflow';
 
-import type { Role } from '@db/entities/Role';
 import type { User } from '@db/entities/User';
 import { WorkflowHistoryRepository } from '@db/repositories/workflowHistory.repository';
 import { ActiveWorkflowRunner } from '@/ActiveWorkflowRunner';
-import * as UserManagementHelpers from '@/UserManagement/UserManagementHelper';
-import { Push } from '@/push';
 import { WorkflowSharingService } from '@/workflows/workflowSharing.service';
 
 import { mockInstance } from '../../shared/mocking';
@@ -18,15 +15,12 @@ import type { SaveCredentialFunction } from '../shared/types';
 import { makeWorkflow } from '../shared/utils/';
 import { randomCredentialPayload } from '../shared/random';
 import { affixRoleToSaveCredential, shareCredentialWithUsers } from '../shared/db/credentials';
-import {
-	getCredentialOwnerRole,
-	getGlobalMemberRole,
-	getGlobalOwnerRole,
-} from '../shared/db/roles';
 import { createUser } from '../shared/db/users';
 import { createWorkflow, getWorkflowSharing, shareWorkflowWithUsers } from '../shared/db/workflows';
+import { License } from '@/License';
+import { UserManagementMailer } from '@/UserManagement/email';
+import config from '@/config';
 
-let globalMemberRole: Role;
 let owner: User;
 let member: User;
 let anotherMember: User;
@@ -36,29 +30,25 @@ let authAnotherMemberAgent: SuperAgentTest;
 let saveCredential: SaveCredentialFunction;
 
 const activeWorkflowRunner = mockInstance(ActiveWorkflowRunner);
-mockInstance(Push);
 
-const sharingSpy = jest.spyOn(UserManagementHelpers, 'isSharingEnabled').mockReturnValue(true);
+const sharingSpy = jest.spyOn(License.prototype, 'isSharingEnabled').mockReturnValue(true);
 const testServer = utils.setupTestServer({
 	endpointGroups: ['workflows'],
 	enabledFeatures: ['feat:sharing'],
 });
 const license = testServer.license;
+const mailer = mockInstance(UserManagementMailer);
 
 beforeAll(async () => {
-	const globalOwnerRole = await getGlobalOwnerRole();
-	globalMemberRole = await getGlobalMemberRole();
-	const credentialOwnerRole = await getCredentialOwnerRole();
-
-	owner = await createUser({ globalRole: globalOwnerRole });
-	member = await createUser({ globalRole: globalMemberRole });
-	anotherMember = await createUser({ globalRole: globalMemberRole });
+	owner = await createUser({ role: 'global:owner' });
+	member = await createUser({ role: 'global:member' });
+	anotherMember = await createUser({ role: 'global:member' });
 
 	authOwnerAgent = testServer.authAgentFor(owner);
 	authMemberAgent = testServer.authAgentFor(member);
 	authAnotherMemberAgent = testServer.authAgentFor(anotherMember);
 
-	saveCredential = affixRoleToSaveCredential(credentialOwnerRole);
+	saveCredential = affixRoleToSaveCredential('credential:owner');
 
 	await utils.initNodeTypes();
 });
@@ -68,6 +58,10 @@ beforeEach(async () => {
 	activeWorkflowRunner.remove.mockReset();
 
 	await testDb.truncate(['Workflow', 'SharedWorkflow', 'WorkflowHistory']);
+});
+
+afterEach(() => {
+	jest.clearAllMocks();
 });
 
 describe('router should switch based on flag', () => {
@@ -107,6 +101,7 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(2);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(1);
 	});
 
 	test('PUT /workflows/:id/share should succeed when sharing with invalid user-id', async () => {
@@ -133,6 +128,7 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(3);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(1);
 	});
 
 	test('PUT /workflows/:id/share should override sharing', async () => {
@@ -154,6 +150,7 @@ describe('PUT /workflows/:id', () => {
 
 		const secondSharedWorkflows = await getWorkflowSharing(workflow);
 		expect(secondSharedWorkflows).toHaveLength(2);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(2);
 	});
 
 	test('PUT /workflows/:id/share should allow sharing by the owner of the workflow', async () => {
@@ -167,6 +164,7 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(2);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(1);
 	});
 
 	test('PUT /workflows/:id/share should allow sharing by the instance owner', async () => {
@@ -180,6 +178,7 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(2);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(1);
 	});
 
 	test('PUT /workflows/:id/share should not allow sharing by another shared member', async () => {
@@ -195,6 +194,7 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(2);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(0);
 	});
 
 	test('PUT /workflows/:id/share should not allow sharing with self by another non-shared member', async () => {
@@ -208,12 +208,13 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(1);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(0);
 	});
 
 	test('PUT /workflows/:id/share should not allow sharing by another non-shared member', async () => {
 		const workflow = await createWorkflow({}, member);
 
-		const tempUser = await createUser({ globalRole: globalMemberRole });
+		const tempUser = await createUser({ role: 'global:member' });
 
 		const response = await authAnotherMemberAgent
 			.put(`/workflows/${workflow.id}/share`)
@@ -223,6 +224,21 @@ describe('PUT /workflows/:id', () => {
 
 		const sharedWorkflows = await getWorkflowSharing(workflow);
 		expect(sharedWorkflows).toHaveLength(1);
+		expect(mailer.notifyWorkflowShared).toHaveBeenCalledTimes(0);
+	});
+
+	test('should not call internal hooks listener for email sent if emailing is disabled', async () => {
+		config.set('userManagement.emails.mode', '');
+
+		const workflow = await createWorkflow({}, owner);
+
+		const response = await authOwnerAgent
+			.put(`/workflows/${workflow.id}/share`)
+			.send({ shareWithIds: [member.id] });
+
+		expect(response.statusCode).toBe(200);
+
+		config.set('userManagement.emails.mode', 'smtp');
 	});
 });
 
@@ -989,7 +1005,7 @@ describe('PATCH /workflows/:id - validate interim updates', () => {
 
 describe('getSharedWorkflowIds', () => {
 	it('should show all workflows to owners', async () => {
-		owner.globalRole = await getGlobalOwnerRole();
+		owner.role = 'global:owner';
 		const workflow1 = await createWorkflow({}, member);
 		const workflow2 = await createWorkflow({}, anotherMember);
 		const sharedWorkflowIds =
@@ -1000,7 +1016,7 @@ describe('getSharedWorkflowIds', () => {
 	});
 
 	it('should show shared workflows to users', async () => {
-		member.globalRole = await getGlobalMemberRole();
+		member.role = 'global:member';
 		const workflow1 = await createWorkflow({}, anotherMember);
 		const workflow2 = await createWorkflow({}, anotherMember);
 		const workflow3 = await createWorkflow({}, anotherMember);
