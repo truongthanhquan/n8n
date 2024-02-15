@@ -47,6 +47,13 @@ export class ToolCode implements INodeType {
 		properties: [
 			getConnectionHintNoticeField([NodeConnectionType.AiAgent]),
 			{
+				displayName:
+					'See an example of a conversational agent with custom tool written in JavaScript <a href="/templates/1963" target="_blank">here</a>.',
+				name: 'noticeTemplateExample',
+				type: 'notice',
+				default: '',
+			},
+			{
 				displayName: 'Name',
 				name: 'name',
 				type: 'string',
@@ -95,11 +102,12 @@ export class ToolCode implements INodeType {
 					editor: 'codeNodeEditor',
 					editorLanguage: 'javaScript',
 				},
-				default: '',
+				default:
+					'// Example: convert the incoming query to uppercase and return it\nreturn query.toUpperCase()',
 				// TODO: Add proper text here later
 				hint: 'You can access the input the tool receives via the input property "query". The returned value should be a single string.',
-				description:
-					'JavaScript code to execute.<br><br>Tip: You can use luxon vars like <code>$today</code> for dates and <code>$jmespath</code> for querying JSON structures. <a href="https://docs.n8n.io/nodes/n8n-nodes-base.function">Learn more</a>.',
+				// eslint-disable-next-line n8n-nodes-base/node-param-description-missing-final-period
+				description: 'E.g. Converts any text to uppercase',
 				noDataExpression: true,
 			},
 			{
@@ -115,11 +123,12 @@ export class ToolCode implements INodeType {
 					editor: 'codeNodeEditor',
 					editorLanguage: 'python',
 				},
-				default: '',
+				default:
+					'# Example: convert the incoming query to uppercase and return it\nreturn query.upper()',
 				// TODO: Add proper text here later
 				hint: 'You can access the input the tool receives via the input property "query". The returned value should be a single string.',
-				description:
-					'Python code to execute.<br><br>Tip: You can use built-in methods and variables like <code>_today</code> for dates and <code>_jmespath</code> for querying JSON structures. <a href="https://docs.n8n.io/code/builtin/">Learn more</a>.',
+				// eslint-disable-next-line n8n-nodes-base/node-param-description-missing-final-period
+				description: 'E.g. Converts any text to uppercase',
 				noDataExpression: true,
 			},
 		],
@@ -189,10 +198,9 @@ export class ToolCode implements INodeType {
 
 					if (typeof response !== 'string') {
 						// TODO: Do some more testing. Issues here should actually fail the workflow
-						executionError = new NodeOperationError(
-							this.getNode(),
-							`The code did not return a valid value. Instead of a string did a value of type '${typeof response}' get returned.`,
-						);
+						executionError = new NodeOperationError(this.getNode(), 'Wrong output type returned', {
+							description: `The response property should be a string, but it is an ${typeof response}`,
+						});
 						response = `There was an error: "${executionError.message}"`;
 					}
 
