@@ -14,6 +14,8 @@ import type {
 import { NodeError } from './abstract/node.error';
 import { removeCircularRefs } from '../utils';
 import type { ReportingOptions } from './application.error';
+import { AxiosError } from 'axios';
+import { NO_OP_NODE_TYPE } from '../Constants';
 
 export interface NodeOperationErrorOptions {
 	message?: string;
@@ -23,6 +25,7 @@ export interface NodeOperationErrorOptions {
 	level?: ReportingOptions['level'];
 	messageMapping?: { [key: string]: string }; // allows to pass custom mapping for error messages scoped to a node
 	functionality?: Functionality;
+	type?: string;
 }
 
 interface NodeApiErrorOptions extends NodeOperationErrorOptions {
@@ -126,6 +129,10 @@ export class NodeApiError extends NodeError {
 		}: NodeApiErrorOptions = {},
 	) {
 		super(node, errorResponse);
+
+		if (!httpCode && errorResponse instanceof AxiosError) {
+			httpCode = errorResponse.response?.status?.toString();
+		}
 
 		// only for request library error
 		if (errorResponse.error) {
@@ -276,7 +283,7 @@ export class NodeApiError extends NodeError {
 				// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
 				this.message = this.message || this.description || UNKNOWN_ERROR_MESSAGE;
 		}
-		if (this.node.type === 'n8n-nodes-base.noOp' && this.message === UNKNOWN_ERROR_MESSAGE) {
+		if (this.node.type === NO_OP_NODE_TYPE && this.message === UNKNOWN_ERROR_MESSAGE) {
 			this.message = `${UNKNOWN_ERROR_MESSAGE_CRED} - ${this.httpCode}`;
 		}
 	}

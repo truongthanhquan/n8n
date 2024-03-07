@@ -4,16 +4,22 @@
 		:class="$style['expression-parameter-input']"
 		@keydown.tab="onBlur"
 	>
-		<div :class="[$style['all-sections'], { [$style['focused']]: isFocused }]">
+		<div
+			:class="[
+				$style['all-sections'],
+				{ [$style.focused]: isFocused, [$style.assignment]: isAssignment },
+			]"
+		>
 			<div :class="[$style['prepend-section'], 'el-input-group__prepend']">
-				<ExpressionFunctionIcon />
+				<span v-if="isAssignment">=</span>
+				<ExpressionFunctionIcon v-else />
 			</div>
 			<InlineExpressionEditorInput
 				ref="inlineInput"
 				:model-value="modelValue"
 				:is-read-only="isReadOnly"
 				:target-item="hoveringItem"
-				:is-single-line="isSingleLine"
+				:rows="rows"
 				:additional-data="additionalExpressionData"
 				:path="path"
 				@focus="onFocus"
@@ -35,6 +41,7 @@
 		<InlineExpressionEditorOutput
 			:segments="segments"
 			:is-read-only="isReadOnly"
+			:no-input-data="noInputData"
 			:visible="isFocused"
 			:hovering-item-number="hoveringItemNumber"
 		/>
@@ -56,6 +63,7 @@ import { createExpressionTelemetryPayload } from '@/utils/telemetryUtils';
 import type { Segment } from '@/types/expressions';
 import type { TargetItem } from '@/Interface';
 import type { IDataObject } from 'n8n-workflow';
+import { useDebounce } from '@/composables/useDebounce';
 
 type InlineExpressionEditorInputRef = InstanceType<typeof InlineExpressionEditorInput>;
 
@@ -77,7 +85,11 @@ export default defineComponent({
 			type: Boolean,
 			default: false,
 		},
-		isSingleLine: {
+		rows: {
+			type: Number,
+			default: 5,
+		},
+		isAssignment: {
 			type: Boolean,
 			default: false,
 		},
@@ -85,6 +97,10 @@ export default defineComponent({
 			type: Object as PropType<IDataObject>,
 			default: () => ({}),
 		},
+	},
+	setup() {
+		const { callDebounced } = useDebounce();
+		return { callDebounced };
 	},
 	data() {
 		return {
@@ -102,6 +118,9 @@ export default defineComponent({
 		},
 		isDragging(): boolean {
 			return this.ndvStore.isDraggableDragging;
+		},
+		noInputData(): boolean {
+			return !this.ndvStore.hasInputData;
 		},
 	},
 	methods: {
@@ -130,9 +149,9 @@ export default defineComponent({
 
 			this.isFocused = false;
 
-			this.$emit('blur');
-
 			if (wasFocused) {
+				this.$emit('blur');
+
 				const telemetryPayload = createExpressionTelemetryPayload(
 					this.segments,
 					this.modelValue,
@@ -144,11 +163,13 @@ export default defineComponent({
 				this.$telemetry.track('User closed Expression Editor', telemetryPayload);
 			}
 		},
-		onChange({ value, segments }: { value: string; segments: Segment[] }) {
-			if (this.isDragging) return;
-
+		onChange(value: { value: string; segments: Segment[] }) {
+			void this.callDebounced(this.onChangeDebounced, { debounceTime: 100, trailing: true }, value);
+		},
+		onChangeDebounced({ value, segments }: { value: string; segments: Segment[] }) {
 			this.segments = segments;
 
+			if (this.isDragging) return;
 			if (value === '=' + this.modelValue) return; // prevent report on change of target item
 
 			this.$emit('update:modelValue', value);
@@ -167,8 +188,6 @@ export default defineComponent({
 
 	.all-sections {
 		height: 30px;
-		display: flex;
-		flex-direction: row;
 		display: inline-table;
 		width: 100%;
 	}
@@ -178,6 +197,13 @@ export default defineComponent({
 		padding-top: 2px;
 		width: 22px;
 		text-align: center;
+	}
+}
+
+.assignment {
+	.prepend-section {
+		vertical-align: top;
+		padding-top: 4px;
 	}
 }
 
@@ -192,6 +218,8 @@ export default defineComponent({
 		var(--input-border-style, var(--border-style-base))
 		var(--input-border-width, var(--border-width-base));
 	cursor: pointer;
+	border-radius: 0;
+	border-top-left-radius: var(--border-radius-base);
 
 	&:hover {
 		border: var(--input-border-color, var(--border-color-base))

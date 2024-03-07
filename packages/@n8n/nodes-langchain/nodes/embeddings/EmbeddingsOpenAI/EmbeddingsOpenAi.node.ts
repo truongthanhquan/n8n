@@ -9,7 +9,7 @@ import {
 } from 'n8n-workflow';
 
 import type { ClientOptions } from 'openai';
-import { OpenAIEmbeddings } from 'langchain/embeddings/openai';
+import { OpenAIEmbeddings } from '@langchain/openai';
 import { logWrapper } from '../../../utils/logWrapper';
 import { getConnectionHintNoticeField } from '../../../utils/sharedFields';
 
@@ -103,6 +103,11 @@ export class EmbeddingsOpenAi implements INodeType {
 		// eslint-disable-next-line n8n-nodes-base/node-class-description-outputs-wrong
 		outputs: [NodeConnectionType.AiEmbedding],
 		outputNames: ['Embeddings'],
+		requestDefaults: {
+			ignoreHttpStatusErrors: true,
+			baseURL:
+				'={{ $parameter.options?.baseURL?.split("/").slice(0,-1).join("/") || "https://api.openai.com" }}',
+		},
 		properties: [
 			getConnectionHintNoticeField([NodeConnectionType.AiVectorStore]),
 			{

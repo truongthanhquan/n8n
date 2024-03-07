@@ -2,6 +2,7 @@ import {
 	copyInputItems,
 	getBinaryDataBuffer,
 	parseIncomingMessage,
+	parseRequestObject,
 	proxyRequestToAxios,
 	setBinaryDataBuffer,
 } from '@/NodeExecuteFunctions';
@@ -10,6 +11,7 @@ import type { IncomingMessage } from 'http';
 import { mock } from 'jest-mock-extended';
 import type {
 	IBinaryData,
+	IHttpRequestMethods,
 	INode,
 	ITaskDataConnections,
 	IWorkflowExecuteAdditionalData,
@@ -21,6 +23,7 @@ import nock from 'nock';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import Container from 'typedi';
+import type { Agent } from 'https';
 
 const temporaryDir = mkdtempSync(join(tmpdir(), 'n8n'));
 
@@ -355,6 +358,56 @@ describe('NodeExecuteFunctions', () => {
 					}),
 				).rejects.toThrowError(expect.objectContaining({ statusCode: 301 }));
 			});
+		});
+	});
+
+	describe('parseRequestObject', () => {
+		test('should not use Host header for SNI', async () => {
+			const axiosOptions = await parseRequestObject({
+				url: 'https://example.de/foo/bar',
+				headers: { Host: 'other.host.com' },
+			});
+			expect((axiosOptions.httpsAgent as Agent).options.servername).toEqual('example.de');
+		});
+
+		describe('when followRedirect is true', () => {
+			test.each(['GET', 'HEAD'] as IHttpRequestMethods[])(
+				'should set maxRedirects on %s ',
+				async (method) => {
+					const axiosOptions = await parseRequestObject({
+						method,
+						followRedirect: true,
+						maxRedirects: 1234,
+					});
+					expect(axiosOptions.maxRedirects).toEqual(1234);
+				},
+			);
+
+			test.each(['POST', 'PUT', 'PATCH', 'DELETE'] as IHttpRequestMethods[])(
+				'should not set maxRedirects on %s ',
+				async (method) => {
+					const axiosOptions = await parseRequestObject({
+						method,
+						followRedirect: true,
+						maxRedirects: 1234,
+					});
+					expect(axiosOptions.maxRedirects).toEqual(0);
+				},
+			);
+		});
+
+		describe('when followAllRedirects is true', () => {
+			test.each(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] as IHttpRequestMethods[])(
+				'should set maxRedirects on %s ',
+				async (method) => {
+					const axiosOptions = await parseRequestObject({
+						method,
+						followAllRedirects: true,
+						maxRedirects: 1234,
+					});
+					expect(axiosOptions.maxRedirects).toEqual(1234);
+				},
+			);
 		});
 	});
 
