@@ -6,6 +6,7 @@ import type {
 	IHookFunctions,
 	IHttpRequestMethods,
 	ILoadOptionsFunctions,
+	INode,
 	INodeExecutionData,
 	INodeProperties,
 	IPairedItemData,
@@ -20,12 +21,13 @@ import { camelCase, capitalCase, snakeCase } from 'change-case';
 import moment from 'moment-timezone';
 
 import { validate as uuidValidate } from 'uuid';
+import set from 'lodash/set';
 import { filters } from './descriptions/Filters';
+import { blockUrlExtractionRegexp } from './constants';
 
 function uuidValidateWithoutDashes(this: IExecuteFunctions, value: string) {
 	if (uuidValidate(value)) return true;
 	if (value.length == 32) {
-		//prettier-ignore
 		const strWithDashes = `${value.slice(0, 8)}-${value.slice(8, 12)}-${value.slice(12, 16)}-${value.slice(16, 20)}-${value.slice(20)}`;
 		if (uuidValidate(strWithDashes)) return true;
 	}
@@ -41,6 +43,7 @@ const apiVersion: { [key: number]: string } = {
 	1: '2021-05-13',
 	2: '2021-08-16',
 	2.1: '2021-08-16',
+	2.2: '2021-08-16',
 };
 
 export async function notionApiRequest(
@@ -306,7 +309,6 @@ export function formatBlocks(blocks: IDataObject[]) {
 			[block.type as string]: {
 				...(block.type === 'to_do' ? { checked: block.checked } : {}),
 				...(block.type === 'image' ? { type: 'external', external: { url: block.url } } : {}),
-				// prettier-ignore,
 				...(!['image'].includes(block.type as string) ? getTextBlocks(block) : {}),
 			},
 		});
@@ -864,9 +866,12 @@ export type FileRecord = {
 			  };
 	};
 };
-// prettier-ignore
-export async function downloadFiles(this: IExecuteFunctions | IPollFunctions, records: FileRecord[], pairedItem?: IPairedItemData[]): Promise<INodeExecutionData[]> {
 
+export async function downloadFiles(
+	this: IExecuteFunctions | IPollFunctions,
+	records: FileRecord[],
+	pairedItem?: IPairedItemData[],
+): Promise<INodeExecutionData[]> {
 	const elements: INodeExecutionData[] = [];
 	for (const record of records) {
 		const element: INodeExecutionData = { json: {}, binary: {} };
@@ -884,10 +889,12 @@ export async function downloadFiles(this: IExecuteFunctions | IPollFunctions, re
 							'',
 							{},
 							{},
-							file?.file?.url as string || file?.external?.url as string,
+							(file?.file?.url as string) || (file?.external?.url as string),
 							{ json: false, encoding: null },
 						);
-						element.binary![`${key}_${index}`] = await this.helpers.prepareBinaryData(data as Buffer);
+						element.binary![`${key}_${index}`] = await this.helpers.prepareBinaryData(
+							data as Buffer,
+						);
 					}
 				}
 			}
@@ -1128,3 +1135,57 @@ export function simplifyBlocksOutput(blocks: IDataObject[], rootId: string) {
 
 	return blocks;
 }
+
+export function extractBlockId(this: IExecuteFunctions, nodeVersion: number, itemIndex: number) {
+	let blockId: string;
+
+	if (nodeVersion < 2.2) {
+		blockId = extractPageId(
+			this.getNodeParameter('blockId', itemIndex, '', { extractValue: true }) as string,
+		);
+	} else {
+		const blockIdRLCData = this.getNodeParameter('blockId', itemIndex, {}) as IDataObject;
+
+		if (blockIdRLCData.mode === 'id') {
+			blockId = blockIdRLCData.value as string;
+		} else {
+			const blockRegex = /https:\/\/www\.notion\.so\/.+\?pvs=[0-9]+#([a-f0-9]{2,})/;
+			const match = (blockIdRLCData.value as string).match(blockRegex);
+
+			if (match === null) {
+				const pageRegex = new RegExp(blockUrlExtractionRegexp);
+				const pageMatch = (blockIdRLCData.value as string).match(pageRegex);
+
+				if (pageMatch === null) {
+					throw new NodeOperationError(
+						this.getNode(),
+						'Invalid URL, could not find block ID or page ID',
+						{
+							itemIndex,
+						},
+					);
+				} else {
+					blockId = extractPageId(pageMatch[1]);
+				}
+			} else {
+				blockId = match[1];
+			}
+		}
+	}
+
+	return blockId;
+}
+
+export const prepareNotionError = (node: INode, error: Error, itemIndex: number) => {
+	if (error instanceof NodeApiError) {
+		set(error, 'context.itemIndex', itemIndex);
+		return error;
+	}
+
+	if (error instanceof NodeOperationError && error?.context?.itemIndex === undefined) {
+		set(error, 'context.itemIndex', itemIndex);
+		return error;
+	}
+
+	return new NodeOperationError(node, error, { itemIndex });
+};

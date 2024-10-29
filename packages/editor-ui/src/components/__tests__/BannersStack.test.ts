@@ -2,7 +2,7 @@ import { merge } from 'lodash-es';
 import userEvent from '@testing-library/user-event';
 
 import { SETTINGS_STORE_DEFAULT_STATE } from '@/__tests__/utils';
-import { STORES } from '@/constants';
+import { ROLE, STORES } from '@/constants';
 
 import { createTestingPinia } from '@pinia/testing';
 import BannerStack from '@/components/banners/BannerStack.vue';
@@ -23,14 +23,14 @@ const initialState = {
 	},
 	[STORES.USERS]: {
 		currentUserId: 'aaa-bbb',
-		users: {
+		usersById: {
 			'aaa-bbb': {
 				id: 'aaa-bbb',
-				role: 'global:owner',
+				role: ROLE.Owner,
 			},
 			'bbb-bbb': {
 				id: 'bbb-bbb',
-				role: 'global:member',
+				role: ROLE.Member,
 			},
 		},
 	},
@@ -63,9 +63,7 @@ describe('BannerStack', () => {
 
 	it('should dismiss banner on click', async () => {
 		const { getByTestId } = renderComponent();
-		const dismissBannerSpy = vi
-			.spyOn(uiStore, 'dismissBanner')
-			.mockImplementation(async (banner, mode) => {});
+		const dismissBannerSpy = vi.spyOn(uiStore, 'dismissBanner').mockImplementation(async () => {});
 		expect(getByTestId('banners-V1')).toBeInTheDocument();
 		const closeTrialBannerButton = getByTestId('banner-V1-close');
 		expect(closeTrialBannerButton).toBeInTheDocument();
@@ -75,9 +73,7 @@ describe('BannerStack', () => {
 
 	it('should permanently dismiss banner on click', async () => {
 		const { getByTestId } = renderComponent();
-		const dismissBannerSpy = vi
-			.spyOn(uiStore, 'dismissBanner')
-			.mockImplementation(async (banner, mode) => {});
+		const dismissBannerSpy = vi.spyOn(uiStore, 'dismissBanner').mockImplementation(async () => {});
 
 		const permanentlyDismissBannerLink = getByTestId('banner-confirm-v1');
 		expect(permanentlyDismissBannerLink).toBeInTheDocument();
@@ -109,7 +105,7 @@ describe('BannerStack', () => {
 				},
 			}),
 		});
-		const confirmEmailSpy = vi.spyOn(useUsersStore(), 'confirmEmail');
+		const confirmEmailSpy = vi.spyOn(useUsersStore(), 'sendConfirmationEmail');
 		getByTestId('confirm-email-button').click();
 		await waitFor(() => expect(confirmEmailSpy).toHaveBeenCalled());
 		await waitFor(() => {
@@ -129,9 +125,11 @@ describe('BannerStack', () => {
 				},
 			}),
 		});
-		const confirmEmailSpy = vi.spyOn(useUsersStore(), 'confirmEmail').mockImplementation(() => {
-			throw new Error(ERROR_MESSAGE);
-		});
+		const confirmEmailSpy = vi
+			.spyOn(useUsersStore(), 'sendConfirmationEmail')
+			.mockImplementation(() => {
+				throw new Error(ERROR_MESSAGE);
+			});
 		getByTestId('confirm-email-button').click();
 		await waitFor(() => expect(confirmEmailSpy).toHaveBeenCalled());
 		await waitFor(() => {

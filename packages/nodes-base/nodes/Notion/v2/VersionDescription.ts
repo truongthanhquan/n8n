@@ -1,5 +1,5 @@
 /* eslint-disable n8n-nodes-base/node-filename-against-convention */
-import type { INodeTypeDescription } from 'n8n-workflow';
+import { NodeConnectionType, type INodeTypeDescription } from 'n8n-workflow';
 import { databaseFields, databaseOperations } from '../shared/descriptions/DatabaseDescription';
 
 import { userFields, userOperations } from '../shared/descriptions/UserDescription';
@@ -16,16 +16,17 @@ import {
 export const versionDescription: INodeTypeDescription = {
 	displayName: 'Notion',
 	name: 'notion',
-	icon: 'file:notion.svg',
+	icon: { light: 'file:notion.svg', dark: 'file:notion.dark.svg' },
 	group: ['output'],
-	version: [2, 2.1],
+	version: [2, 2.1, 2.2],
 	subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
 	description: 'Consume Notion API',
 	defaults: {
 		name: 'Notion',
 	},
-	inputs: ['main'],
-	outputs: ['main'],
+	inputs: [NodeConnectionType.Main],
+	outputs: [NodeConnectionType.Main],
+	usableAsTool: true,
 	credentials: [
 		{
 			name: 'notionApi',

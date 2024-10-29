@@ -1,14 +1,15 @@
-import type {
-	IExecuteFunctions,
-	ICredentialsDecrypted,
-	ICredentialTestFunctions,
-	IDataObject,
-	ILoadOptionsFunctions,
-	INodeCredentialTestResult,
-	INodeExecutionData,
-	INodeType,
-	INodeTypeDescription,
-	IRequestOptions,
+import {
+	type IExecuteFunctions,
+	type ICredentialsDecrypted,
+	type ICredentialTestFunctions,
+	type IDataObject,
+	type ILoadOptionsFunctions,
+	type INodeCredentialTestResult,
+	type INodeExecutionData,
+	type INodeType,
+	type INodeTypeDescription,
+	type IRequestOptions,
+	NodeConnectionType,
 } from 'n8n-workflow';
 
 import {
@@ -44,8 +45,8 @@ export class Grist implements INodeType {
 		defaults: {
 			name: 'Grist',
 		},
-		inputs: ['main'],
-		outputs: ['main'],
+		inputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{
 				name: 'gristApi',
@@ -82,8 +83,8 @@ export class Grist implements INodeType {
 					planType === 'free'
 						? `https://docs.getgrist.com/api${endpoint}`
 						: planType === 'paid'
-						  ? `https://${customSubdomain}.getgrist.com/api${endpoint}`
-						  : `${selfHostedUrl}/api${endpoint}`;
+							? `https://${customSubdomain}.getgrist.com/api${endpoint}`
+							: `${selfHostedUrl}/api${endpoint}`;
 
 				const options: IRequestOptions = {
 					headers: {

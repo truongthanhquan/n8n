@@ -3,10 +3,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Service } from 'typedi';
-import { NodeExecuteFunctions } from 'n8n-core';
 import get from 'lodash/get';
-
+import { NodeExecuteFunctions } from 'n8n-core';
 import type {
 	ICredentialsDecrypted,
 	ICredentialTestFunction,
@@ -23,6 +21,7 @@ import type {
 	INodeTypeData,
 	INodeTypes,
 	ICredentialTestFunctions,
+	IDataObject,
 } from 'n8n-workflow';
 import {
 	VersionedNodeType,
@@ -32,15 +31,17 @@ import {
 	ErrorReporterProxy as ErrorReporter,
 	ApplicationError,
 } from 'n8n-workflow';
+import { Service } from 'typedi';
 
-import * as WorkflowExecuteAdditionalData from '@/WorkflowExecuteAdditionalData';
-import type { User } from '@db/entities/User';
-import { NodeTypes } from '@/NodeTypes';
-import { CredentialTypes } from '@/CredentialTypes';
+import { CredentialTypes } from '@/credential-types';
+import type { User } from '@/databases/entities/user';
+import { Logger } from '@/logging/logger.service';
+import { NodeTypes } from '@/node-types';
+import * as WorkflowExecuteAdditionalData from '@/workflow-execute-additional-data';
+
 import { RESPONSE_ERROR_MESSAGES } from '../constants';
+import { CredentialsHelper } from '../credentials-helper';
 import { isObjectLiteral } from '../utils';
-import { Logger } from '@/Logger';
-import { CredentialsHelper } from '../CredentialsHelper';
 
 const { OAUTH2_CREDENTIAL_TEST_SUCCEEDED, OAUTH2_CREDENTIAL_TEST_FAILED } = RESPONSE_ERROR_MESSAGES;
 
@@ -54,6 +55,9 @@ const mockNodesData: INodeTypeData = {
 };
 
 const mockNodeTypes: INodeTypes = {
+	getKnownTypes(): IDataObject {
+		return {};
+	},
 	getByName(nodeType: string): INodeType | IVersionedNodeType {
 		return mockNodesData[nodeType]?.type;
 	},
@@ -84,7 +88,7 @@ export class CredentialsTester {
 		return 'access_token' in oauthTokenData;
 	}
 
-	private getCredentialTestFunction(
+	getCredentialTestFunction(
 		credentialType: string,
 	): ICredentialTestFunction | ICredentialTestRequestData | undefined {
 		// Check if test is defined on credentials
@@ -116,7 +120,8 @@ export class CredentialsTester {
 				for (const { name, testedBy } of nodeType.description.credentials ?? []) {
 					if (
 						name === credentialType &&
-						this.credentialTypes.getParentTypes(name).includes('oAuth2Api')
+						(this.credentialTypes.getParentTypes(name).includes('oAuth2Api') ||
+							name === 'oAuth2Api')
 					) {
 						return async function oauth2CredTest(
 							this: ICredentialTestFunctions,
@@ -126,11 +131,11 @@ export class CredentialsTester {
 								? {
 										status: 'OK',
 										message: OAUTH2_CREDENTIAL_TEST_SUCCEEDED,
-								  }
+									}
 								: {
 										status: 'Error',
 										message: OAUTH2_CREDENTIAL_TEST_FAILED,
-								  };
+									};
 						};
 					}
 
@@ -165,6 +170,7 @@ export class CredentialsTester {
 		return undefined;
 	}
 
+	// eslint-disable-next-line complexity
 	async testCredentials(
 		user: User,
 		credentialType: string,
@@ -188,7 +194,7 @@ export class CredentialsTester {
 					'internal' as WorkflowExecuteMode,
 					undefined,
 					undefined,
-					user.hasGlobalScope('externalSecret:use'),
+					await this.credentialsHelper.credentialCanUseExternalSecrets(credentialsDecrypted),
 				);
 			} catch (error) {
 				this.logger.debug('Credential test failed', error);

@@ -5,6 +5,7 @@ import {
 	type INodeTypeDescription,
 	type ITriggerFunctions,
 	type ITriggerResponse,
+	NodeConnectionType,
 } from 'n8n-workflow';
 import {
 	pgTriggerFunction,
@@ -38,7 +39,7 @@ export class PostgresTrigger implements INodeType {
 				"Once you've finished building your workflow, <a data-key='activate'>activate</a> it to have it also listen continuously (you just won't see those executions here).",
 		},
 		inputs: [],
-		outputs: ['main'],
+		outputs: [NodeConnectionType.Main],
 		credentials: [
 			{
 				name: 'postgres',
@@ -209,6 +210,33 @@ export class PostgresTrigger implements INodeType {
 					},
 				],
 			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add option',
+				default: {},
+				options: [
+					{
+						displayName: 'Connection Timeout',
+						name: 'connectionTimeout',
+						type: 'number',
+						default: 30,
+						description: 'Number of seconds reserved for connecting to the database',
+					},
+					{
+						displayName: 'Delay Closing Idle Connection',
+						name: 'delayClosingIdleConnection',
+						type: 'number',
+						default: 0,
+						description:
+							'Number of seconds to wait before idle connection would be eligible for closing',
+						typeOptions: {
+							minValue: 0,
+						},
+					},
+				],
+			},
 		],
 	};
 
@@ -262,7 +290,7 @@ export class PostgresTrigger implements INodeType {
 					await connection.query('SELECT 1');
 				} catch {
 					// connection already closed. Can't perform cleanup
-					// eslint-disable-next-line n8n-nodes-base/node-execute-block-wrong-error-thrown
+
 					throw new TriggerCloseError(this.getNode(), { level: 'warning' });
 				}
 
@@ -288,7 +316,6 @@ export class PostgresTrigger implements INodeType {
 						]);
 					}
 				} catch (error) {
-					// eslint-disable-next-line n8n-nodes-base/node-execute-block-wrong-error-thrown
 					throw new TriggerCloseError(this.getNode(), { cause: error as Error, level: 'error' });
 				}
 			} finally {

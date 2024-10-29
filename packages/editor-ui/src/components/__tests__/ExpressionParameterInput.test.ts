@@ -1,22 +1,17 @@
-import { createPinia, setActivePinia } from 'pinia';
-import userEvent from '@testing-library/user-event';
 import { createComponentRenderer } from '@/__tests__/render';
-import { useWorkflowsStore } from '@/stores/workflows.store';
-import { useNDVStore } from '@/stores/ndv.store';
 import ExpressionParameterInput from '@/components/ExpressionParameterInput.vue';
-
-const renderComponent = createComponentRenderer(ExpressionParameterInput);
-
-let pinia: ReturnType<typeof createPinia>;
-let workflowsStore: ReturnType<typeof useWorkflowsStore>;
-let ndvStore: ReturnType<typeof useNDVStore>;
+import { type TestingPinia, createTestingPinia } from '@pinia/testing';
+import userEvent from '@testing-library/user-event';
+import { waitFor } from '@testing-library/vue';
+import { setActivePinia } from 'pinia';
 
 describe('ExpressionParameterInput', () => {
+	const renderComponent = createComponentRenderer(ExpressionParameterInput);
+	let pinia: TestingPinia;
+
 	beforeEach(() => {
-		pinia = createPinia();
+		pinia = createTestingPinia();
 		setActivePinia(pinia);
-		workflowsStore = useWorkflowsStore();
-		ndvStore = useNDVStore();
 	});
 
 	test.each([
@@ -31,7 +26,7 @@ describe('ExpressionParameterInput', () => {
 		});
 
 		await userEvent.click(getByTestId('expander'));
-		expect(emitted().modalOpenerClick).toEqual(expected);
+		expect(emitted()['modal-opener-click']).toEqual(expected);
 	});
 
 	test('it should only emit blur when input had focus', async () => {
@@ -52,5 +47,22 @@ describe('ExpressionParameterInput', () => {
 		// trigger click outside -> blur
 		await userEvent.click(baseElement);
 		expect(emitted('blur')).toHaveLength(1);
+	});
+
+	describe('in read-only mode', () => {
+		test('it should render a read-only expression input', async () => {
+			const { container } = renderComponent({
+				props: {
+					modelValue: '={{$json.foo}}',
+					isReadOnly: true,
+				},
+			});
+
+			await waitFor(() => {
+				const editor = container.querySelector('.cm-content') as HTMLDivElement;
+				expect(editor).toBeInTheDocument();
+				expect(editor.getAttribute('aria-readonly')).toEqual('true');
+			});
+		});
 	});
 });

@@ -1,6 +1,60 @@
 import type { INodeProperties } from 'n8n-workflow';
 
 import { blocks } from './Blocks';
+import {
+	blockUrlExtractionRegexp,
+	blockUrlValidationRegexp,
+	idExtractionRegexp,
+	idValidationRegexp,
+} from '../constants';
+
+//RLC with fixed regex for blockId
+const blockIdRLC: INodeProperties = {
+	displayName: 'Block',
+	name: 'blockId',
+	type: 'resourceLocator',
+	default: { mode: 'url', value: '' },
+	required: true,
+	modes: [
+		{
+			displayName: 'Link',
+			name: 'url',
+			type: 'string',
+			placeholder:
+				'e.g. https://www.notion.so/Block-Test-88888ccc303e4f44847f27d24bd7ad8e?pvs=4#c44444444444bbbbb4d32fdfdd84e',
+			validation: [
+				{
+					type: 'regex',
+					properties: {
+						regex: blockUrlValidationRegexp,
+						errorMessage: 'Not a valid Notion Block URL',
+					},
+				},
+			],
+			// extractValue: {
+			// 	type: 'regex',
+			// 	regex: blockUrlExtractionRegexp,
+			// },
+		},
+		{
+			displayName: 'ID',
+			name: 'id',
+			type: 'string',
+			placeholder: 'e.g. ab1545b247fb49fa92d6f4b49f4d8116',
+			validation: [
+				{
+					type: 'regex',
+					properties: {
+						regex: '[a-f0-9]{2,}',
+						errorMessage: 'Not a valid Notion Block ID',
+					},
+				},
+			],
+		},
+	],
+	description:
+		"The Notion Block to get all children from, when using 'By URL' mode make sure to use the URL of the block itself, you can find it in block parameters in Notion under 'Copy link to block'",
+};
 
 export const blockOperations: INodeProperties[] = [
 	{
@@ -52,16 +106,14 @@ export const blockFields: INodeProperties[] = [
 					{
 						type: 'regex',
 						properties: {
-							regex:
-								'(?:https|http)://www.notion.so/(?:[a-z0-9-]{2,}/)?(?:[a-zA-Z0-9-]{2,}-)?([0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}).*',
+							regex: blockUrlValidationRegexp,
 							errorMessage: 'Not a valid Notion Block URL',
 						},
 					},
 				],
 				extractValue: {
 					type: 'regex',
-					regex:
-						'(?:https|http)://www.notion.so/(?:[a-z0-9-]{2,}/)?(?:[a-zA-Z0-9-]{2,}-)?([0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12})',
+					regex: blockUrlExtractionRegexp,
 				},
 			},
 			{
@@ -73,15 +125,14 @@ export const blockFields: INodeProperties[] = [
 					{
 						type: 'regex',
 						properties: {
-							regex:
-								'^(([0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12})|([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))[ \t]*',
+							regex: idValidationRegexp,
 							errorMessage: 'Not a valid Notion Block ID',
 						},
 					},
 				],
 				extractValue: {
 					type: 'regex',
-					regex: '^([0-9a-f]{8}-?[0-9a-f]{4}-?4[0-9a-f]{3}-?[89ab][0-9a-f]{3}-?[0-9a-f]{12})',
+					regex: idExtractionRegexp,
 				},
 				url: '=https://www.notion.so/{{$value.replace(/-/g, "")}}',
 			},
@@ -91,8 +142,21 @@ export const blockFields: INodeProperties[] = [
 				resource: ['block'],
 				operation: ['append'],
 			},
+			hide: {
+				'@version': [{ _cnd: { gte: 2.2 } }],
+			},
 		},
 		description: 'The Notion Block to append blocks to',
+	},
+	{
+		...blockIdRLC,
+		displayOptions: {
+			show: {
+				resource: ['block'],
+				operation: ['append'],
+				'@version': [{ _cnd: { gte: 2.2 } }],
+			},
+		},
 	},
 	...blocks('block', 'append'),
 	/* -------------------------------------------------------------------------- */
@@ -114,16 +178,14 @@ export const blockFields: INodeProperties[] = [
 					{
 						type: 'regex',
 						properties: {
-							regex:
-								'(?:https|http)://www.notion.so/(?:[a-z0-9-]{2,}/)?(?:[a-zA-Z0-9-]{2,}-)?([0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12}).*',
+							regex: blockUrlValidationRegexp,
 							errorMessage: 'Not a valid Notion Block URL',
 						},
 					},
 				],
 				extractValue: {
 					type: 'regex',
-					regex:
-						'(?:https|http)://www.notion.so/(?:[a-z0-9-]{2,}/)?(?:[a-zA-Z0-9-]{2,}-)?([0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12})',
+					regex: blockUrlExtractionRegexp,
 				},
 			},
 			{
@@ -135,15 +197,14 @@ export const blockFields: INodeProperties[] = [
 					{
 						type: 'regex',
 						properties: {
-							regex:
-								'^(([0-9a-f]{8}[0-9a-f]{4}4[0-9a-f]{3}[89ab][0-9a-f]{3}[0-9a-f]{12})|([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}))[ \t]*',
+							regex: idValidationRegexp,
 							errorMessage: 'Not a valid Notion Block ID',
 						},
 					},
 				],
 				extractValue: {
 					type: 'regex',
-					regex: '^([0-9a-f]{8}-?[0-9a-f]{4}-?4[0-9a-f]{3}-?[89ab][0-9a-f]{3}-?[0-9a-f]{12})',
+					regex: idExtractionRegexp,
 				},
 				url: '=https://www.notion.so/{{$value.replace(/-/g, "")}}',
 			},
@@ -153,8 +214,21 @@ export const blockFields: INodeProperties[] = [
 				resource: ['block'],
 				operation: ['getAll'],
 			},
+			hide: {
+				'@version': [{ _cnd: { gte: 2.2 } }],
+			},
 		},
 		description: 'The Notion Block to get all children from',
+	},
+	{
+		...blockIdRLC,
+		displayOptions: {
+			show: {
+				resource: ['block'],
+				operation: ['getAll'],
+				'@version': [{ _cnd: { gte: 2.2 } }],
+			},
+		},
 	},
 	{
 		displayName: 'Return All',

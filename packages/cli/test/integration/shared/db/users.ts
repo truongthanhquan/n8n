@@ -1,23 +1,24 @@
-import Container from 'typedi';
 import { hash } from 'bcryptjs';
-import { AuthIdentity } from '@db/entities/AuthIdentity';
-import type { GlobalRole, User } from '@db/entities/User';
-import { AuthIdentityRepository } from '@db/repositories/authIdentity.repository';
-import { UserRepository } from '@db/repositories/user.repository';
-import { TOTPService } from '@/Mfa/totp.service';
-import { MfaService } from '@/Mfa/mfa.service';
+import Container from 'typedi';
 
-import { randomApiKey, randomEmail, randomName, randomValidPassword } from '../random';
+import { AuthIdentity } from '@/databases/entities/auth-identity';
+import { type GlobalRole, type User } from '@/databases/entities/user';
+import { AuthIdentityRepository } from '@/databases/repositories/auth-identity.repository';
+import { AuthUserRepository } from '@/databases/repositories/auth-user.repository';
+import { UserRepository } from '@/databases/repositories/user.repository';
+import { MfaService } from '@/mfa/mfa.service';
+import { TOTPService } from '@/mfa/totp.service';
+import { PublicApiKeyService } from '@/services/public-api-key.service';
+
+import { randomEmail, randomName, randomValidPassword } from '../random';
 
 // pre-computed bcrypt hash for the string 'password', using `await hash('password', 10)`
 const passwordHash = '$2a$10$njedH7S6V5898mj6p0Jr..IGY9Ms.qNwR7RbSzzX9yubJocKfvGGK';
 
-/**
- * Store a user in the DB, defaulting to a `member`.
- */
-export async function createUser(attributes: Partial<User> = {}): Promise<User> {
+/** Store a new user object, defaulting to a `member` */
+export async function newUser(attributes: Partial<User> = {}): Promise<User> {
 	const { email, password, firstName, lastName, role, ...rest } = attributes;
-	const user = Container.get(UserRepository).create({
+	return Container.get(UserRepository).create({
 		email: email ?? randomEmail(),
 		password: password ? await hash(password, 1) : passwordHash,
 		firstName: firstName ?? randomName(),
@@ -25,9 +26,14 @@ export async function createUser(attributes: Partial<User> = {}): Promise<User> 
 		role: role ?? 'global:member',
 		...rest,
 	});
-	user.computeIsOwner();
+}
 
-	return await Container.get(UserRepository).save(user);
+/** Store a user object in the DB */
+export async function createUser(attributes: Partial<User> = {}): Promise<User> {
+	const userInstance = await newUser(attributes);
+	const { user } = await Container.get(UserRepository).createUserWithProject(userInstance);
+	user.computeIsOwner();
+	return user;
 }
 
 export async function createLdapUser(attributes: Partial<User>, ldapId: string): Promise<User> {
@@ -55,18 +61,41 @@ export async function createUserWithMfaEnabled(
 		recoveryCodes,
 	);
 
+	const user = await createUser({
+		mfaEnabled: true,
+		password,
+		email,
+	});
+
+	await Container.get(AuthUserRepository).update(user.id, {
+		mfaSecret: encryptedSecret,
+		mfaRecoveryCodes: encryptedRecoveryCodes,
+	});
+
 	return {
-		user: await createUser({
-			mfaEnabled: true,
-			password,
-			email,
-			mfaSecret: encryptedSecret,
-			mfaRecoveryCodes: encryptedRecoveryCodes,
-		}),
+		user,
 		rawPassword: password,
 		rawSecret: secret,
 		rawRecoveryCodes: recoveryCodes,
 	};
+}
+
+export const addApiKey = async (user: User) => {
+	return await Container.get(PublicApiKeyService).createPublicApiKeyForUser(user);
+};
+
+export async function createOwnerWithApiKey() {
+	const owner = await createOwner();
+	const apiKey = await addApiKey(owner);
+	owner.apiKeys = [apiKey];
+	return owner;
+}
+
+export async function createMemberWithApiKey() {
+	const member = await createMember();
+	const apiKey = await addApiKey(member);
+	member.apiKeys = [apiKey];
+	return member;
 }
 
 export async function createOwner() {
@@ -88,7 +117,8 @@ export async function createUserShell(role: GlobalRole): Promise<User> {
 		shell.email = randomEmail();
 	}
 
-	return await Container.get(UserRepository).save(shell);
+	const { user } = await Container.get(UserRepository).createUserWithProject(shell);
+	return user;
 }
 
 /**
@@ -98,27 +128,15 @@ export async function createManyUsers(
 	amount: number,
 	attributes: Partial<User> = {},
 ): Promise<User[]> {
-	let { email, password, firstName, lastName, role, ...rest } = attributes;
-
-	const users = await Promise.all(
-		[...Array(amount)].map(async () =>
-			Container.get(UserRepository).create({
-				email: email ?? randomEmail(),
-				password: password ? await hash(password, 1) : passwordHash,
-				firstName: firstName ?? randomName(),
-				lastName: lastName ?? randomName(),
-				role: role ?? 'global:member',
-				...rest,
+	const result = await Promise.all(
+		Array(amount)
+			.fill(0)
+			.map(async () => {
+				const userInstance = await newUser(attributes);
+				return await Container.get(UserRepository).createUserWithProject(userInstance);
 			}),
-		),
 	);
-
-	return await Container.get(UserRepository).save(users);
-}
-
-export async function addApiKey(user: User): Promise<User> {
-	user.apiKey = randomApiKey();
-	return await Container.get(UserRepository).save(user);
+	return result.map((result) => result.user);
 }
 
 export const getAllUsers = async () =>
@@ -135,5 +153,9 @@ export const getUserById = async (id: string) =>
 export const getLdapIdentities = async () =>
 	await Container.get(AuthIdentityRepository).find({
 		where: { providerType: 'ldap' },
-		relations: ['user'],
+		relations: { user: true },
 	});
+
+export async function getGlobalOwner() {
+	return await Container.get(UserRepository).findOneByOrFail({ role: 'global:owner' });
+}

@@ -8,7 +8,7 @@ export type IMenuItem = {
 	icon?: string;
 	secondaryIcon?: {
 		name: string;
-		size?: 'xsmall' | 'small' | 'medium' | 'large' | 'xlarge';
+		size?: 'xsmall' | 'small' | 'medium' | 'large';
 		tooltip?: Partial<ElTooltipProps>;
 	};
 	customIconSize?: 'medium' | 'small';
@@ -27,6 +27,8 @@ export type IMenuItem = {
 	activateOnRoutePaths?: string[];
 
 	children?: IMenuItem[];
+	isLoading?: boolean;
+	disabled?: boolean;
 };
 
 export type IRouteMenuItemProperties = {

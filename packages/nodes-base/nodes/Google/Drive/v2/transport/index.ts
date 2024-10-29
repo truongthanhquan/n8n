@@ -61,27 +61,7 @@ export async function googleApiRequest(
 			error.statusCode = '401';
 		}
 
-		const apiError = new NodeApiError(
-			this.getNode(),
-			{
-				reason: error.error,
-			} as JsonObject,
-			{ httpCode: String(error.statusCode) },
-		);
-
-		if (
-			apiError.message &&
-			apiError.description &&
-			(apiError.message.toLowerCase().includes('bad request') ||
-				apiError.message.toLowerCase().includes('forbidden') ||
-				apiError.message.toUpperCase().includes('UNKNOWN ERROR'))
-		) {
-			const message = apiError.message;
-			apiError.message = apiError.description;
-			apiError.description = message;
-		}
-
-		throw apiError;
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 

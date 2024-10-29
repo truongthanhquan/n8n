@@ -3,12 +3,68 @@ import userEvent from '@testing-library/user-event';
 import { createTestingPinia } from '@pinia/testing';
 import { merge } from 'lodash-es';
 import RunData from '@/components/RunData.vue';
-import { STORES, VIEWS } from '@/constants';
+import { SET_NODE_TYPE, STORES, VIEWS } from '@/constants';
 import { SETTINGS_STORE_DEFAULT_STATE } from '@/__tests__/utils';
 import { createComponentRenderer } from '@/__tests__/render';
-import type { IRunDataDisplayMode } from '@/Interface';
+import type { INodeUi, IRunDataDisplayMode, NodePanelType } from '@/Interface';
+import { useWorkflowsStore } from '@/stores/workflows.store';
+import { setActivePinia } from 'pinia';
+import { defaultNodeTypes } from '@/__tests__/mocks';
+import type { INodeExecutionData } from 'n8n-workflow';
+
+const nodes = [
+	{
+		id: '1',
+		typeVersion: 3,
+		name: 'Test Node',
+		position: [0, 0],
+		type: SET_NODE_TYPE,
+		parameters: {},
+	},
+] as INodeUi[];
 
 describe('RunData', () => {
+	it("should render pin button in output panel disabled when there's binary data", () => {
+		const { getByTestId } = render(
+			[
+				{
+					json: {},
+					binary: {
+						data: {
+							fileName: 'test.xyz',
+							mimeType: 'application/octet-stream',
+						},
+					},
+				},
+			],
+			'binary',
+		);
+
+		expect(getByTestId('ndv-pin-data')).toBeInTheDocument();
+		expect(getByTestId('ndv-pin-data')).toHaveAttribute('disabled');
+	});
+
+	it("should not render pin button in input panel when there's binary data", () => {
+		const { queryByTestId } = render(
+			[
+				{
+					json: {},
+					binary: {
+						data: {
+							fileName: 'test.xyz',
+							mimeType: 'application/octet-stream',
+						},
+					},
+				},
+			],
+			'binary',
+			undefined,
+			'input',
+		);
+
+		expect(queryByTestId('ndv-pin-data')).not.toBeInTheDocument();
+	});
+
 	it('should render data correctly even when "item.json" has another "json" key', async () => {
 		const { getByText, getAllByTestId, getByTestId } = render(
 			[
@@ -81,11 +137,138 @@ describe('RunData', () => {
 		expect(getByTestId('ndv-binary-data_0')).toBeInTheDocument();
 	});
 
-	const render = (outputData: unknown[], displayMode: IRunDataDisplayMode) =>
-		createComponentRenderer(RunData, {
+	it('should not render pin data button when there is no output data', async () => {
+		const { queryByTestId } = render([], 'table');
+		expect(queryByTestId('ndv-pin-data')).not.toBeInTheDocument();
+	});
+
+	it('should disable pin data button when data is pinned', async () => {
+		const { getByTestId } = render([], 'table', [{ json: { name: 'Test' } }]);
+		const pinDataButton = getByTestId('ndv-pin-data');
+		expect(pinDataButton).toBeDisabled();
+	});
+
+	it('should enable pin data button when data is not pinned', async () => {
+		const { getByTestId } = render([{ json: { name: 'Test' } }], 'table');
+		const pinDataButton = getByTestId('ndv-pin-data');
+		expect(pinDataButton).toBeEnabled();
+	});
+
+	it('should not render pagination on binary tab', async () => {
+		const { queryByTestId } = render(
+			Array.from({ length: 11 }).map((_, i) => ({
+				json: {
+					data: {
+						id: i,
+						name: `Test ${i}`,
+					},
+				},
+				binary: {
+					data: {
+						a: 'b',
+					},
+				},
+			})),
+			'binary',
+		);
+		expect(queryByTestId('ndv-data-pagination')).not.toBeInTheDocument();
+	});
+
+	it('should render pagination with binary data on non-binary tab', async () => {
+		const { getByTestId } = render(
+			Array.from({ length: 11 }).map((_, i) => ({
+				json: {
+					data: {
+						id: i,
+						name: `Test ${i}`,
+					},
+				},
+				binary: {
+					data: {
+						a: 'b',
+					},
+				},
+			})),
+			'json',
+		);
+		expect(getByTestId('ndv-data-pagination')).toBeInTheDocument();
+	});
+
+	const render = (
+		outputData: unknown[],
+		displayMode: IRunDataDisplayMode,
+		pinnedData?: INodeExecutionData[],
+		paneType: NodePanelType = 'output',
+	) => {
+		const pinia = createTestingPinia({
+			initialState: {
+				[STORES.SETTINGS]: {
+					settings: merge({}, SETTINGS_STORE_DEFAULT_STATE.settings),
+				},
+				[STORES.NDV]: {
+					output: {
+						displayMode,
+					},
+					activeNodeName: 'Test Node',
+				},
+				[STORES.WORKFLOWS]: {
+					workflow: {
+						nodes,
+					},
+					workflowExecutionData: {
+						id: '1',
+						finished: true,
+						mode: 'trigger',
+						startedAt: new Date(),
+						workflowData: {
+							id: '1',
+							name: 'Test Workflow',
+							versionId: '1',
+							createdAt: new Date().toISOString(),
+							updatedAt: new Date().toISOString(),
+							active: false,
+							nodes: [],
+							connections: {},
+						},
+						data: {
+							resultData: {
+								runData: {
+									'Test Node': [
+										{
+											startTime: new Date().getTime(),
+											executionTime: new Date().getTime(),
+											data: {
+												main: [outputData],
+											},
+											source: [null],
+										},
+									],
+								},
+							},
+						},
+					},
+				},
+				[STORES.NODE_TYPES]: {
+					nodeTypes: defaultNodeTypes,
+				},
+			},
+		});
+
+		setActivePinia(pinia);
+
+		const workflowsStore = useWorkflowsStore();
+		vi.mocked(workflowsStore).getNodeByName.mockReturnValue(nodes[0]);
+		if (pinnedData) {
+			vi.mocked(workflowsStore).pinDataByNodeName.mockReturnValue(pinnedData);
+		}
+
+		return createComponentRenderer(RunData, {
 			props: {
 				node: {
 					name: 'Test Node',
+				},
+				workflow: {
+					nodes,
 				},
 			},
 			data() {
@@ -95,6 +278,9 @@ describe('RunData', () => {
 				};
 			},
 			global: {
+				stubs: {
+					RunDataPinButton: { template: '<button data-test-id="ndv-pin-data"></button>' },
+				},
 				mocks: {
 					$route: {
 						name: VIEWS.WORKFLOW,
@@ -108,70 +294,14 @@ describe('RunData', () => {
 					name: 'Test Node',
 					position: [0, 0],
 				},
+				nodes: [{ name: 'Test Node', indicies: [], depth: 1 }],
 				runIndex: 0,
-				paneType: 'output',
+				paneType,
 				isExecuting: false,
 				mappingEnabled: true,
 				distanceFromActive: 0,
 			},
-			pinia: createTestingPinia({
-				initialState: {
-					[STORES.SETTINGS]: {
-						settings: merge({}, SETTINGS_STORE_DEFAULT_STATE.settings),
-					},
-					[STORES.NDV]: {
-						output: {
-							displayMode,
-						},
-						activeNodeName: 'Test Node',
-					},
-					[STORES.WORKFLOWS]: {
-						workflow: {
-							nodes: [
-								{
-									id: '1',
-									typeVersion: 1,
-									name: 'Test Node',
-									position: [0, 0],
-									type: 'test',
-									parameters: {},
-								},
-							],
-						},
-						workflowExecutionData: {
-							id: '1',
-							finished: true,
-							mode: 'trigger',
-							startedAt: new Date(),
-							workflowData: {
-								id: '1',
-								name: 'Test Workflow',
-								versionId: '1',
-								createdAt: new Date().toISOString(),
-								updatedAt: new Date().toISOString(),
-								active: false,
-								nodes: [],
-								connections: {},
-							},
-							data: {
-								resultData: {
-									runData: {
-										'Test Node': [
-											{
-												startTime: new Date().getTime(),
-												executionTime: new Date().getTime(),
-												data: {
-													main: [outputData],
-												},
-												source: [null],
-											},
-										],
-									},
-								},
-							},
-						},
-					},
-				},
-			}),
+			pinia,
 		});
+	};
 });

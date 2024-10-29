@@ -5,10 +5,11 @@ import ParameterInputFull from '@/components/ParameterInputFull.vue';
 import ParameterIssues from '@/components/ParameterIssues.vue';
 import { useI18n } from '@/composables/useI18n';
 import { DateTime } from 'luxon';
-import {
-	type FilterConditionValue,
-	type FilterOptionsValue,
-	type INodeProperties,
+import type {
+	FilterConditionValue,
+	FilterOptionsValue,
+	INodeProperties,
+	NodeParameterValue,
 } from 'n8n-workflow';
 import { computed, ref } from 'vue';
 import OperatorSelect from './OperatorSelect.vue';
@@ -16,9 +17,12 @@ import { type FilterOperatorId } from './constants';
 import {
 	getFilterOperator,
 	handleOperatorChange,
+	inferOperatorType,
+	isEmptyInput,
 	operatorTypeToNodeProperty,
 	resolveCondition,
 } from './utils';
+import { useDebounce } from '@/composables/useDebounce';
 
 interface Props {
 	path: string;
@@ -40,11 +44,12 @@ const props = withDefaults(defineProps<Props>(), {
 });
 
 const emit = defineEmits<{
-	(event: 'update', value: FilterConditionValue): void;
-	(event: 'remove'): void;
+	update: [value: FilterConditionValue];
+	remove: [];
 }>();
 
 const i18n = useI18n();
+const { debounce } = useDebounce();
 
 const condition = ref<FilterConditionValue>(props.condition);
 
@@ -54,12 +59,28 @@ const operatorId = computed<FilterOperatorId>(() => {
 });
 const operator = computed(() => getFilterOperator(operatorId.value));
 
+const isEmpty = computed(() => {
+	if (operator.value.singleValue) {
+		return isEmptyInput(condition.value.leftValue);
+	}
+
+	return isEmptyInput(condition.value.leftValue) && isEmptyInput(condition.value.rightValue);
+});
+
 const conditionResult = computed(() =>
 	resolveCondition({ condition: condition.value, options: props.options }),
 );
 
+const suggestedType = computed(() => {
+	if (conditionResult.value.status !== 'resolve_error') {
+		return inferOperatorType(conditionResult.value.resolved.leftValue);
+	}
+
+	return 'any';
+});
+
 const allIssues = computed(() => {
-	if (conditionResult.value.status === 'validation_error') {
+	if (conditionResult.value.status === 'validation_error' && !isEmpty.value) {
 		return [conditionResult.value.error];
 	}
 
@@ -69,8 +90,8 @@ const allIssues = computed(() => {
 const now = computed(() => DateTime.now().toISO());
 
 const leftParameter = computed<INodeProperties>(() => ({
-	name: '',
-	displayName: '',
+	name: 'left',
+	displayName: 'Left',
 	default: '',
 	placeholder:
 		operator.value.type === 'dateTime'
@@ -82,8 +103,8 @@ const leftParameter = computed<INodeProperties>(() => ({
 const rightParameter = computed<INodeProperties>(() => {
 	const type = operator.value.rightType ?? operator.value.type;
 	return {
-		name: '',
-		displayName: '',
+		name: 'right',
+		displayName: 'Right',
 		default: '',
 		placeholder:
 			type === 'dateTime' ? now.value : i18n.baseText('filter.condition.placeholderRight'),
@@ -91,12 +112,16 @@ const rightParameter = computed<INodeProperties>(() => {
 	};
 });
 
+const debouncedEmitUpdate = debounce(() => emit('update', condition.value), { debounceTime: 500 });
+
 const onLeftValueChange = (update: IUpdateInformation): void => {
-	condition.value.leftValue = update.value;
+	condition.value.leftValue = update.value as NodeParameterValue;
+	debouncedEmitUpdate();
 };
 
 const onRightValueChange = (update: IUpdateInformation): void => {
-	condition.value.rightValue = update.value;
+	condition.value.rightValue = update.value as NodeParameterValue;
+	debouncedEmitUpdate();
 };
 
 const onOperatorChange = (value: string): void => {
@@ -107,7 +132,7 @@ const onOperatorChange = (value: string): void => {
 		newOperator,
 	});
 
-	emit('update', condition.value);
+	debouncedEmitUpdate();
 };
 
 const onRemove = (): void => {
@@ -115,7 +140,7 @@ const onRemove = (): void => {
 };
 
 const onBlur = (): void => {
-	emit('update', condition.value);
+	debouncedEmitUpdate();
 };
 </script>
 
@@ -147,7 +172,6 @@ const onBlur = (): void => {
 					hide-label
 					hide-hint
 					hide-issues
-					:rows="3"
 					:is-read-only="readOnly"
 					:parameter="leftParameter"
 					:value="condition.leftValue"
@@ -161,8 +185,9 @@ const onBlur = (): void => {
 			<template #middle>
 				<OperatorSelect
 					:selected="`${operator.type}:${operator.operation}`"
+					:suggested-type="suggestedType"
 					:read-only="readOnly"
-					@operatorChange="onOperatorChange"
+					@operator-change="onOperatorChange"
 				></OperatorSelect>
 			</template>
 			<template v-if="!operator.singleValue" #right="{ breakpoint }">
@@ -172,7 +197,6 @@ const onBlur = (): void => {
 					hide-label
 					hide-hint
 					hide-issues
-					:rows="3"
 					:is-read-only="readOnly"
 					:options-position="breakpoint === 'default' ? 'top' : 'bottom'"
 					:parameter="rightParameter"

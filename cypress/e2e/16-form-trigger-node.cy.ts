@@ -16,12 +16,14 @@ describe('n8n Form Trigger', () => {
 		ndv.getters.parameterInput('formDescription').type('Test Form Description');
 		ndv.getters.parameterInput('fieldLabel').type('Test Field 1');
 		ndv.getters.backToCanvas().click();
-		workflowPage.getters.nodeIssuesByName('n8n Form Trigger').should('not.exist');
+		workflowPage.getters.nodeIssuesByName('On form submission').should('not.exist');
 	});
 
 	it('should fill up form fields', () => {
-		workflowPage.actions.addInitialNodeToCanvas('n8n Form Trigger');
-		workflowPage.getters.canvasNodes().first().dblclick();
+		workflowPage.actions.addInitialNodeToCanvas('n8n Form Trigger', {
+			isTrigger: true,
+			action: 'On new n8n Form event',
+		});
 		ndv.getters.parameterInput('formTitle').type('Test Form');
 		ndv.getters.parameterInput('formDescription').type('Test Form Description');
 		//fill up first field of type number
@@ -42,7 +44,8 @@ describe('n8n Form Trigger', () => {
 			':nth-child(3) > .border-top-dashed > .parameter-input-list-wrapper > :nth-child(1) > .parameter-item',
 		)
 			.find('input[placeholder*="e.g. What is your name?"]')
-			.type('Test Field 3');
+			.type('Test Field 3')
+			.blur();
 		cy.get(
 			':nth-child(3) > .border-top-dashed > .parameter-input-list-wrapper > :nth-child(2) > .parameter-item',
 		).click();
@@ -53,7 +56,8 @@ describe('n8n Form Trigger', () => {
 			':nth-child(4) > .border-top-dashed > .parameter-input-list-wrapper > :nth-child(1) > .parameter-item',
 		)
 			.find('input[placeholder*="e.g. What is your name?"]')
-			.type('Test Field 4');
+			.type('Test Field 4')
+			.blur();
 		cy.get(
 			':nth-child(4) > .border-top-dashed > .parameter-input-list-wrapper > :nth-child(2) > .parameter-item',
 		).click();
@@ -65,15 +69,18 @@ describe('n8n Form Trigger', () => {
 			':nth-child(4) > :nth-child(1) > :nth-child(2) > :nth-child(3) > .multi-parameter > .fixed-collection-parameter > .fixed-collection-parameter-property > :nth-child(1) > :nth-child(1)',
 		)
 			.find('input')
-			.type('Option 1');
+			.type('Option 1')
+			.blur();
 		cy.get(
 			':nth-child(4) > :nth-child(1) > :nth-child(2) > :nth-child(3) > .multi-parameter > .fixed-collection-parameter > .fixed-collection-parameter-property > :nth-child(1) > :nth-child(2)',
 		)
 			.find('input')
-			.type('Option 2');
+			.type('Option 2')
+			.blur();
 
 		//add optional submitted message
 		cy.get('.param-options').click();
+		getVisibleSelect().find('span').contains('Form Response').click();
 		cy.contains('span', 'Text to Show')
 			.should('exist')
 			.parent()
@@ -91,6 +98,6 @@ describe('n8n Form Trigger', () => {
 			.type('Your test form was successfully submitted');
 
 		ndv.getters.backToCanvas().click();
-		workflowPage.getters.nodeIssuesByName('n8n Form Trigger').should('not.exist');
+		workflowPage.getters.nodeIssuesByName('On form submission').should('not.exist');
 	});
 });

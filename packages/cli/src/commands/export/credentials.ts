@@ -1,12 +1,14 @@
 import { Flags } from '@oclif/core';
 import fs from 'fs';
-import path from 'path';
 import { Credentials } from 'n8n-core';
-import type { ICredentialsDb, ICredentialsDecryptedDb } from '@/Interfaces';
-import { BaseCommand } from '../BaseCommand';
-import { CredentialsRepository } from '@db/repositories/credentials.repository';
-import Container from 'typedi';
 import { ApplicationError } from 'n8n-workflow';
+import path from 'path';
+import Container from 'typedi';
+
+import { CredentialsRepository } from '@/databases/repositories/credentials.repository';
+import type { ICredentialsDb, ICredentialsDecryptedDb } from '@/interfaces';
+
+import { BaseCommand } from '../base-command';
 
 export class ExportCredentialsCommand extends BaseCommand {
 	static description = 'Export credentials';
@@ -48,6 +50,7 @@ export class ExportCredentialsCommand extends BaseCommand {
 		}),
 	};
 
+	// eslint-disable-next-line complexity
 	async run() {
 		const { flags } = await this.parse(ExportCredentialsCommand);
 
@@ -111,9 +114,9 @@ export class ExportCredentialsCommand extends BaseCommand {
 
 		if (flags.decrypted) {
 			for (let i = 0; i < credentials.length; i++) {
-				const { name, type, nodesAccess, data } = credentials[i];
+				const { name, type, data } = credentials[i];
 				const id = credentials[i].id;
-				const credential = new Credentials({ id, name }, type, nodesAccess, data);
+				const credential = new Credentials({ id, name }, type, data);
 				const plainData = credential.getData();
 				(credentials[i] as ICredentialsDecryptedDb).data = plainData;
 			}

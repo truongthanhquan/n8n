@@ -4,51 +4,57 @@ import type {
 	IStartRunData,
 	IWorkflowDb,
 } from '@/Interface';
+
 import type {
-	IDataObject,
 	IRunData,
 	IRunExecutionData,
 	ITaskData,
 	IPinData,
-	IWorkflowBase,
 	Workflow,
 	StartNodeData,
+	IRun,
+	INode,
+	IDataObject,
 } from 'n8n-workflow';
-import {
-	NodeHelpers,
-	NodeConnectionType,
-	TelemetryHelpers,
-	FORM_TRIGGER_PATH_IDENTIFIER,
-} from 'n8n-workflow';
+
+import { FORM_NODE_TYPE, NodeConnectionType } from 'n8n-workflow';
 
 import { useToast } from '@/composables/useToast';
 import { useNodeHelpers } from '@/composables/useNodeHelpers';
 
-import { FORM_TRIGGER_NODE_TYPE, WAIT_NODE_TYPE } from '@/constants';
-import { useTitleChange } from '@/composables/useTitleChange';
-import { useRootStore } from '@/stores/n8nRoot.store';
+import {
+	CHAT_TRIGGER_NODE_TYPE,
+	FORM_TRIGGER_NODE_TYPE,
+	WAIT_NODE_TYPE,
+	WORKFLOW_LM_CHAT_MODAL_KEY,
+} from '@/constants';
+
+import { useRootStore } from '@/stores/root.store';
 import { useUIStore } from '@/stores/ui.store';
 import { useWorkflowsStore } from '@/stores/workflows.store';
-import { openPopUpWindow } from '@/utils/executionUtils';
+import { displayForm, openPopUpWindow } from '@/utils/executionUtils';
 import { useExternalHooks } from '@/composables/useExternalHooks';
 import { useWorkflowHelpers } from '@/composables/useWorkflowHelpers';
 import type { useRouter } from 'vue-router';
 import { isEmpty } from '@/utils/typesUtils';
 import { useI18n } from '@/composables/useI18n';
-import { useTelemetry } from '@/composables/useTelemetry';
 import { get } from 'lodash-es';
+import { useExecutionsStore } from '@/stores/executions.store';
+import type { PushPayload } from '@n8n/api-types';
+import { useLocalStorage } from '@vueuse/core';
 
-export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }) {
+const FORM_RELOAD = 'n8n_redirect_to_next_form_test_page';
+
+export function useRunWorkflow(useRunWorkflowOpts: { router: ReturnType<typeof useRouter> }) {
 	const nodeHelpers = useNodeHelpers();
-	const workflowHelpers = useWorkflowHelpers({ router: options.router });
+	const workflowHelpers = useWorkflowHelpers({ router: useRunWorkflowOpts.router });
 	const i18n = useI18n();
-	const telemetry = useTelemetry();
 	const toast = useToast();
-	const { titleSet } = useTitleChange();
 
 	const rootStore = useRootStore();
 	const uiStore = useUIStore();
 	const workflowsStore = useWorkflowsStore();
+	const executionsStore = useExecutionsStore();
 
 	// Starts to execute a workflow on server
 	async function runWorkflowApi(runData: IStartRunData): Promise<IExecutionPushResponse> {
@@ -75,6 +81,11 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 			workflowsStore.activeExecutionId = response.executionId;
 		}
 
+		if (response.waitingForWebhook === true && useWorkflowsStore().nodesIssuesExist) {
+			uiStore.removeActiveAction('workflowRunning');
+			throw new Error(i18n.baseText('workflowRun.showError.resolveOutstandingIssues'));
+		}
+
 		if (response.waitingForWebhook === true) {
 			workflowsStore.executionWaitingForWebhook = true;
 		}
@@ -90,95 +101,22 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 	}): Promise<IExecutionPushResponse | undefined> {
 		const workflow = workflowHelpers.getCurrentWorkflow();
 
-		if (uiStore.isActionActive('workflowRunning')) {
+		if (uiStore.isActionActive['workflowRunning']) {
 			return;
 		}
 
-		titleSet(workflow.name as string, 'EXECUTING');
+		workflowHelpers.setDocumentTitle(workflow.name as string, 'EXECUTING');
 
 		toast.clearAllStickyNotifications();
 
 		try {
-			// Check first if the workflow has any issues before execute it
-			nodeHelpers.refreshNodeIssues();
-			const issuesExist = workflowsStore.nodesIssuesExist;
-			if (issuesExist) {
-				// If issues exist get all of the issues of all nodes
-				const workflowIssues = workflowHelpers.checkReadyForExecution(
-					workflow,
-					options.destinationNode,
-				);
-				if (workflowIssues !== null) {
-					const errorMessages = [];
-					let nodeIssues: string[];
-					const trackNodeIssues: Array<{
-						node_type: string;
-						error: string;
-					}> = [];
-					const trackErrorNodeTypes: string[] = [];
-					for (const nodeName of Object.keys(workflowIssues)) {
-						nodeIssues = NodeHelpers.nodeIssuesToString(workflowIssues[nodeName]);
-						let issueNodeType = 'UNKNOWN';
-						const issueNode = workflowsStore.getNodeByName(nodeName);
-
-						if (issueNode) {
-							issueNodeType = issueNode.type;
-						}
-
-						trackErrorNodeTypes.push(issueNodeType);
-						const trackNodeIssue = {
-							node_type: issueNodeType,
-							error: '',
-							caused_by_credential: !!workflowIssues[nodeName].credentials,
-						};
-
-						for (const nodeIssue of nodeIssues) {
-							errorMessages.push(
-								`<a data-action='openNodeDetail' data-action-parameter-node='${nodeName}'>${nodeName}</a>: ${nodeIssue}`,
-							);
-							trackNodeIssue.error = trackNodeIssue.error.concat(', ', nodeIssue);
-						}
-						trackNodeIssues.push(trackNodeIssue);
-					}
-
-					toast.showMessage({
-						title: i18n.baseText('workflowRun.showMessage.title'),
-						message: errorMessages.join('<br />'),
-						type: 'error',
-						duration: 0,
-					});
-					titleSet(workflow.name as string, 'ERROR');
-					void useExternalHooks().run('workflowRun.runError', {
-						errorMessages,
-						nodeName: options.destinationNode,
-					});
-
-					await workflowHelpers.getWorkflowDataToSave().then((workflowData) => {
-						telemetry.track('Workflow execution preflight failed', {
-							workflow_id: workflow.id,
-							workflow_name: workflow.name,
-							execution_type: options.destinationNode || options.triggerNode ? 'node' : 'workflow',
-							node_graph_string: JSON.stringify(
-								TelemetryHelpers.generateNodesGraph(
-									workflowData as IWorkflowBase,
-									workflowHelpers.getNodeTypes(),
-								).nodeGraph,
-							),
-							error_node_types: JSON.stringify(trackErrorNodeTypes),
-							errors: JSON.stringify(trackNodeIssues),
-						});
-					});
-					return;
-				}
-			}
-
 			// Get the direct parents of the node
 			let directParentNodes: string[] = [];
 			if (options.destinationNode !== undefined) {
 				directParentNodes = workflow.getParentNodes(
 					options.destinationNode,
 					NodeConnectionType.Main,
-					1,
+					-1,
 				);
 			}
 
@@ -198,6 +136,10 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 			);
 
 			const { startNodeNames } = consolidatedData;
+			const destinationNodeType = options.destinationNode
+				? workflowsStore.getNodeByName(options.destinationNode)?.type
+				: '';
+
 			let { runData: newRunData } = consolidatedData;
 			let executedNode: string | undefined;
 			if (
@@ -215,6 +157,54 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 					[options.triggerNode as string]: [options.nodeData],
 				} as IRunData;
 				executedNode = options.triggerNode;
+			}
+
+			// If the destination node is specified, check if it is a chat node or has a chat parent
+			if (
+				options.destinationNode &&
+				(workflowsStore.checkIfNodeHasChatParent(options.destinationNode) ||
+					destinationNodeType === CHAT_TRIGGER_NODE_TYPE)
+			) {
+				const startNode = workflow.getStartNode(options.destinationNode);
+				if (startNode && startNode.type === CHAT_TRIGGER_NODE_TYPE) {
+					// Check if the chat node has input data or pin data
+					const chatHasInputData =
+						nodeHelpers.getNodeInputData(startNode, 0, 0, 'input')?.length > 0;
+					const chatHasPinData = !!workflowData.pinData?.[startNode.name];
+
+					// If the chat node has no input data or pin data, open the chat modal
+					// and halt the execution
+					if (!chatHasInputData && !chatHasPinData) {
+						uiStore.openModal(WORKFLOW_LM_CHAT_MODAL_KEY);
+						return;
+					}
+				}
+			}
+
+			//if no destination node is specified
+			//and execution is not triggered from chat
+			//and there are other triggers in the workflow
+			//disable chat trigger node to avoid modal opening and webhook creation
+			if (
+				!options.destinationNode &&
+				options.source !== 'RunData.ManualChatMessage' &&
+				workflowData.nodes.some((node) => node.type === CHAT_TRIGGER_NODE_TYPE)
+			) {
+				const otherTriggers = workflowData.nodes.filter(
+					(node) =>
+						node.type !== CHAT_TRIGGER_NODE_TYPE &&
+						node.type.toLowerCase().includes('trigger') &&
+						!node.disabled,
+				);
+
+				if (otherTriggers.length) {
+					const chatTriggerNode = workflowData.nodes.find(
+						(node) => node.type === CHAT_TRIGGER_NODE_TYPE,
+					);
+					if (chatTriggerNode) {
+						chatTriggerNode.disabled = true;
+					}
+				}
 			}
 
 			const startNodes: StartNodeData[] = startNodeNames.map((name) => {
@@ -236,10 +226,15 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 				};
 			});
 
+			// -1 means the backend chooses the default
+			// 0 is the old flow
+			// 1 is the new flow
+			const partialExecutionVersion = useLocalStorage('PartialExecution.version', -1);
 			const startRunData: IStartRunData = {
 				workflowData,
-				runData: newRunData,
-				pinData: workflowData.pinData,
+				// With the new partial execution version the backend decides what run
+				// data to use and what to ignore.
+				runData: partialExecutionVersion.value === 1 ? (runData ?? undefined) : newRunData,
 				startNodes,
 			};
 			if ('destinationNode' in options) {
@@ -260,7 +255,7 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 				executedNode,
 				data: {
 					resultData: {
-						runData: newRunData || {},
+						runData: newRunData ?? {},
 						pinData: workflowData.pinData,
 						workflowData,
 					},
@@ -280,58 +275,27 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 			const runWorkflowApiResponse = await runWorkflowApi(startRunData);
 			const pinData = workflowData.pinData ?? {};
 
-			for (const node of workflowData.nodes) {
-				if (pinData[node.name]) continue;
+			const getTestUrl = (() => {
+				return (node: INode) => {
+					const path =
+						node.parameters.path ||
+						(node.parameters.options as IDataObject)?.path ||
+						node.webhookId;
+					return `${rootStore.formTestUrl}/${path as string}`;
+				};
+			})();
 
-				if (![FORM_TRIGGER_NODE_TYPE, WAIT_NODE_TYPE].includes(node.type)) {
-					continue;
-				}
-
-				if (
-					options.destinationNode &&
-					options.destinationNode !== node.name &&
-					!directParentNodes.includes(node.name)
-				) {
-					continue;
-				}
-
-				if (node.name === options.destinationNode || !node.disabled) {
-					let testUrl = '';
-
-					if (node.type === FORM_TRIGGER_NODE_TYPE && node.typeVersion === 1) {
-						const webhookPath = (node.parameters.path as string) || node.webhookId;
-						testUrl = `${rootStore.getWebhookTestUrl}/${webhookPath}/${FORM_TRIGGER_PATH_IDENTIFIER}`;
-					}
-
-					if (node.type === FORM_TRIGGER_NODE_TYPE && node.typeVersion > 1) {
-						const webhookPath = (node.parameters.path as string) || node.webhookId;
-						testUrl = `${rootStore.getFormTestUrl}/${webhookPath}`;
-					}
-
-					if (
-						node.type === WAIT_NODE_TYPE &&
-						node.parameters.resume === 'form' &&
-						runWorkflowApiResponse.executionId
-					) {
-						const workflowTriggerNodes = workflow.getTriggerNodes().map((node) => node.name);
-
-						const showForm =
-							options.destinationNode === node.name ||
-							directParentNodes.includes(node.name) ||
-							workflowTriggerNodes.some((triggerNode) =>
-								workflowsStore.isNodeInOutgoingNodeConnections(triggerNode, node.name),
-							);
-
-						if (!showForm) continue;
-
-						const { webhookSuffix } = (node.parameters.options || {}) as IDataObject;
-						const suffix = webhookSuffix ? `/${webhookSuffix}` : '';
-						testUrl = `${rootStore.getFormWaitingUrl}/${runWorkflowApiResponse.executionId}${suffix}`;
-					}
-
-					if (testUrl) openPopUpWindow(testUrl);
-				}
-			}
+			try {
+				displayForm({
+					nodes: workflowData.nodes,
+					runData: workflowsStore.getWorkflowExecution?.data?.resultData?.runData,
+					destinationNode: options.destinationNode,
+					pinData,
+					directParentNodes,
+					source: options.source,
+					getTestUrl,
+				});
+			} catch (error) {}
 
 			await useExternalHooks().run('workflowRun.runWorkflow', {
 				nodeName: options.destinationNode,
@@ -340,10 +304,153 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 
 			return runWorkflowApiResponse;
 		} catch (error) {
-			titleSet(workflow.name as string, 'ERROR');
+			workflowHelpers.setDocumentTitle(workflow.name as string, 'ERROR');
 			toast.showError(error, i18n.baseText('workflowRun.showError.title'));
 			return undefined;
 		}
+	}
+
+	function getFormResumeUrl(node: INode, executionId: string) {
+		const { webhookSuffix } = (node.parameters.options ?? {}) as IDataObject;
+		const suffix = webhookSuffix && typeof webhookSuffix !== 'object' ? `/${webhookSuffix}` : '';
+		const testUrl = `${rootStore.formWaitingUrl}/${executionId}${suffix}`;
+		return testUrl;
+	}
+
+	async function runWorkflowResolvePending(options: {
+		destinationNode?: string;
+		triggerNode?: string;
+		nodeData?: ITaskData;
+		source?: string;
+	}): Promise<IExecutionPushResponse | undefined> {
+		let runWorkflowApiResponse = await runWorkflow(options);
+		let { executionId } = runWorkflowApiResponse || {};
+
+		const MAX_DELAY = 3000;
+
+		const waitForWebhook = async (): Promise<string> => {
+			return await new Promise<string>((resolve) => {
+				let delay = 300;
+				let timeoutId: NodeJS.Timeout | null = null;
+
+				const checkWebhook = async () => {
+					await useExternalHooks().run('workflowRun.runWorkflow', {
+						nodeName: options.destinationNode,
+						source: options.source,
+					});
+
+					if (workflowsStore.activeExecutionId) {
+						executionId = workflowsStore.activeExecutionId;
+						runWorkflowApiResponse = { executionId };
+
+						if (timeoutId) clearTimeout(timeoutId);
+
+						resolve(executionId);
+					}
+
+					delay = Math.min(delay * 1.1, MAX_DELAY);
+					timeoutId = setTimeout(checkWebhook, delay);
+				};
+				timeoutId = setTimeout(checkWebhook, delay);
+			});
+		};
+
+		if (!executionId) executionId = await waitForWebhook();
+
+		let isFormShown =
+			!options.destinationNode &&
+			workflowsStore.allNodes.some((node) => node.type === FORM_TRIGGER_NODE_TYPE);
+
+		const resolveWaitingNodesData = async (): Promise<void> => {
+			return await new Promise<void>((resolve) => {
+				let delay = 300;
+				let timeoutId: NodeJS.Timeout | null = null;
+
+				const processExecution = async () => {
+					await useExternalHooks().run('workflowRun.runWorkflow', {
+						nodeName: options.destinationNode,
+						source: options.source,
+					});
+					const execution = await workflowsStore.getExecution((executionId as string) || '');
+
+					localStorage.removeItem(FORM_RELOAD);
+
+					if (!execution || workflowsStore.workflowExecutionData === null) {
+						uiStore.removeActiveAction('workflowRunning');
+						if (timeoutId) clearTimeout(timeoutId);
+						resolve();
+						return;
+					}
+
+					const { lastNodeExecuted } = execution.data?.resultData || {};
+					const lastNode = execution.workflowData.nodes.find((node) => {
+						return node.name === lastNodeExecuted;
+					});
+
+					if (
+						execution.finished ||
+						['error', 'canceled', 'crashed', 'success'].includes(execution.status)
+					) {
+						workflowsStore.setWorkflowExecutionData(execution);
+						uiStore.removeActiveAction('workflowRunning');
+						workflowsStore.activeExecutionId = null;
+						if (timeoutId) clearTimeout(timeoutId);
+						resolve();
+						return;
+					}
+
+					if (execution.status === 'waiting' && execution.data?.waitTill) {
+						delete execution.data.resultData.runData[
+							execution.data.resultData.lastNodeExecuted as string
+						];
+						workflowsStore.setWorkflowExecutionRunData(execution.data);
+
+						if (
+							lastNode &&
+							(lastNode.type === FORM_NODE_TYPE ||
+								(lastNode.type === WAIT_NODE_TYPE && lastNode.parameters.resume === 'form'))
+						) {
+							let testUrl = getFormResumeUrl(lastNode, executionId as string);
+
+							if (isFormShown) {
+								localStorage.setItem(FORM_RELOAD, testUrl);
+							} else {
+								if (options.destinationNode) {
+									// Check if the form trigger has starting data
+									// if not do not show next form as trigger would redirect to page
+									// otherwise there would be duplicate popup
+									const formTrigger = execution?.workflowData.nodes.find((node) => {
+										return node.type === FORM_TRIGGER_NODE_TYPE;
+									});
+									const runNodeFilter = execution?.data?.startData?.runNodeFilter || [];
+									if (formTrigger && !runNodeFilter.includes(formTrigger.name)) {
+										isFormShown = true;
+									}
+								}
+								if (!isFormShown) {
+									if (lastNode.type === FORM_NODE_TYPE) {
+										testUrl = `${rootStore.formWaitingUrl}/${executionId}`;
+									} else {
+										testUrl = getFormResumeUrl(lastNode, executionId as string);
+									}
+
+									isFormShown = true;
+									if (testUrl) openPopUpWindow(testUrl);
+								}
+							}
+						}
+					}
+
+					delay = Math.min(delay * 1.1, MAX_DELAY);
+					timeoutId = setTimeout(processExecution, delay);
+				};
+				timeoutId = setTimeout(processExecution, delay);
+			});
+		};
+
+		await resolveWaitingNodesData();
+
+		return runWorkflowApiResponse;
 	}
 
 	function consolidateRunDataAndStartNodes(
@@ -352,7 +459,7 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 		pinData: IPinData | undefined,
 		workflow: Workflow,
 	): { runData: IRunData | undefined; startNodeNames: string[] } {
-		const startNodeNames: string[] = [];
+		const startNodeNames = new Set<string>();
 		let newRunData: IRunData | undefined;
 
 		if (runData !== null && Object.keys(runData).length !== 0) {
@@ -369,14 +476,19 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 				parentNodes.push(directParentNode);
 
 				for (const parentNode of parentNodes) {
-					if (!runData[parentNode]?.length && !pinData?.[parentNode]?.length) {
+					// We want to execute nodes that don't have run data neither pin data
+					// in addition, if a node failed we want to execute it again
+					if (
+						(!runData[parentNode]?.length && !pinData?.[parentNode]?.length) ||
+						runData[parentNode]?.[0]?.error !== undefined
+					) {
 						// When we hit a node which has no data we stop and set it
 						// as a start node the execution from and then go on with other
 						// direct input nodes
-						startNodeNames.push(parentNode);
+						startNodeNames.add(parentNode);
 						break;
 					}
-					if (runData[parentNode]) {
+					if (runData[parentNode] && !runData[parentNode]?.[0]?.error) {
 						newRunData[parentNode] = runData[parentNode]?.slice(0, 1);
 					}
 				}
@@ -389,12 +501,81 @@ export function useRunWorkflow(options: { router: ReturnType<typeof useRouter> }
 			}
 		}
 
-		return { runData: newRunData, startNodeNames };
+		return { runData: newRunData, startNodeNames: [...startNodeNames] };
+	}
+
+	async function stopCurrentExecution() {
+		const executionId = workflowsStore.activeExecutionId;
+		if (executionId === null) {
+			return;
+		}
+
+		try {
+			await executionsStore.stopCurrentExecution(executionId);
+		} catch (error) {
+			// Execution stop might fail when the execution has already finished. Let's treat this here.
+			const execution = await workflowsStore.getExecution(executionId);
+
+			if (execution === undefined) {
+				// execution finished but was not saved (e.g. due to low connectivity)
+				workflowsStore.finishActiveExecution({
+					executionId,
+					data: { finished: true, stoppedAt: new Date() } as IRun,
+				});
+				workflowsStore.executingNode.length = 0;
+				uiStore.removeActiveAction('workflowRunning');
+
+				workflowHelpers.setDocumentTitle(workflowsStore.workflowName, 'IDLE');
+				toast.showMessage({
+					title: i18n.baseText('nodeView.showMessage.stopExecutionCatch.unsaved.title'),
+					message: i18n.baseText('nodeView.showMessage.stopExecutionCatch.unsaved.message'),
+					type: 'success',
+				});
+			} else if (execution?.finished) {
+				// execution finished before it could be stopped
+				const executedData = {
+					data: execution.data,
+					finished: execution.finished,
+					mode: execution.mode,
+					startedAt: execution.startedAt,
+					stoppedAt: execution.stoppedAt,
+				} as IRun;
+				const pushData: PushPayload<'executionFinished'> = {
+					data: executedData,
+					executionId,
+					retryOf: execution.retryOf,
+				};
+				workflowsStore.finishActiveExecution(pushData);
+				workflowHelpers.setDocumentTitle(execution.workflowData.name, 'IDLE');
+				workflowsStore.executingNode.length = 0;
+				workflowsStore.setWorkflowExecutionData(executedData as IExecutionResponse);
+				uiStore.removeActiveAction('workflowRunning');
+				toast.showMessage({
+					title: i18n.baseText('nodeView.showMessage.stopExecutionCatch.title'),
+					message: i18n.baseText('nodeView.showMessage.stopExecutionCatch.message'),
+					type: 'success',
+				});
+			} else {
+				toast.showError(error, i18n.baseText('nodeView.showError.stopExecution.title'));
+			}
+		}
+	}
+
+	async function stopWaitingForWebhook() {
+		try {
+			await workflowsStore.removeTestWebhook(workflowsStore.workflowId);
+		} catch (error) {
+			toast.showError(error, i18n.baseText('nodeView.showError.stopWaitingForWebhook.title'));
+			return;
+		}
 	}
 
 	return {
 		consolidateRunDataAndStartNodes,
 		runWorkflow,
+		runWorkflowResolvePending,
 		runWorkflowApi,
+		stopCurrentExecution,
+		stopWaitingForWebhook,
 	};
 }

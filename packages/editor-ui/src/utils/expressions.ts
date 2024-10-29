@@ -1,11 +1,23 @@
-import type { ResolvableState } from '@/types/expressions';
-import { ExpressionError, ExpressionParser } from 'n8n-workflow';
 import { i18n } from '@/plugins/i18n';
 import { useWorkflowsStore } from '@/stores/workflows.store';
+import type { ResolvableState } from '@/types/expressions';
+import { ExpressionError, ExpressionParser, type Result } from 'n8n-workflow';
 
 export const isExpression = (expr: unknown) => {
 	if (typeof expr !== 'string') return false;
 	return expr.startsWith('=');
+};
+
+export const isEmptyExpression = (expr: string) => {
+	return /\{\{\s*\}\}/.test(expr);
+};
+
+export const unwrapExpression = (expr: string) => {
+	return expr.replace(/\{\{(.*)\}\}/, '$1').trim();
+};
+
+export const removeExpressionPrefix = (expr: string | null | undefined) => {
+	return expr?.startsWith('=') ? expr.slice(1) : (expr ?? '');
 };
 
 export const isTestableExpression = (expr: string) => {
@@ -51,13 +63,14 @@ export const isAnyPairedItemError = (error: unknown): error is ExpressionError =
 	return error instanceof ExpressionError && error.context.functionality === 'pairedItem';
 };
 
-export const getResolvableState = (error: unknown): ResolvableState => {
+export const getResolvableState = (error: unknown, ignoreError = false): ResolvableState => {
 	if (!error) return 'valid';
 
 	if (
 		isNoExecDataExpressionError(error) ||
 		isNoNodeExecDataExpressionError(error) ||
-		isPairedItemIntermediateNodesError(error)
+		isPairedItemIntermediateNodesError(error) ||
+		ignoreError
 	) {
 		return 'pending';
 	}
@@ -100,4 +113,24 @@ export const getExpressionErrorMessage = (error: Error): string => {
 	}
 
 	return error.message;
+};
+
+export const stringifyExpressionResult = (result: Result<unknown, Error>): string => {
+	if (!result.ok) {
+		if (getResolvableState(result.error) !== 'invalid') {
+			return '';
+		}
+
+		return `[${i18n.baseText('parameterInput.error')}: ${getExpressionErrorMessage(result.error)}]`;
+	}
+
+	if (result.result === null) {
+		return '';
+	}
+
+	if (typeof result.result === 'string' && result.result.length === 0) {
+		return i18n.baseText('parameterInput.emptyString');
+	}
+
+	return typeof result.result === 'string' ? result.result : String(result.result);
 };

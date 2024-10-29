@@ -9,15 +9,20 @@ import {
 	getNodeAuthOptions,
 	isAuthRelatedParameter,
 } from '@/utils/nodeTypesUtils';
-import type { INodeProperties, INodeTypeDescription, NodeParameterValue } from 'n8n-workflow';
+import type {
+	ICredentialType,
+	INodeProperties,
+	INodeTypeDescription,
+	NodeParameterValue,
+} from 'n8n-workflow';
 import { computed, onMounted, ref } from 'vue';
 
 export interface Props {
-	credentialType: object;
+	credentialType: ICredentialType;
 }
 
 const emit = defineEmits<{
-	(event: 'authTypeChanged', value: string): void;
+	authTypeChanged: [value: string];
 }>();
 
 const nodeTypesStore = useNodeTypesStore();
@@ -140,7 +145,7 @@ defineExpose({
 			:label="prop.value"
 			:class="$style.authRadioButton"
 			border
-			@update:modelValue="onAuthTypeChange"
+			@update:model-value="onAuthTypeChange"
 			>{{ prop.name }}</el-radio
 		>
 	</div>

@@ -1,29 +1,42 @@
-import {
-	copyInputItems,
-	getBinaryDataBuffer,
-	parseIncomingMessage,
-	parseRequestObject,
-	proxyRequestToAxios,
-	setBinaryDataBuffer,
-} from '@/NodeExecuteFunctions';
 import { mkdtempSync, readFileSync } from 'fs';
 import type { IncomingMessage } from 'http';
+import type { Agent } from 'https';
 import { mock } from 'jest-mock-extended';
+import toPlainObject from 'lodash/toPlainObject';
+import { DateTime } from 'luxon';
 import type {
 	IBinaryData,
 	IHttpRequestMethods,
+	IHttpRequestOptions,
 	INode,
+	IRequestOptions,
 	ITaskDataConnections,
 	IWorkflowExecuteAdditionalData,
+	NodeParameterValue,
 	Workflow,
 	WorkflowHooks,
 } from 'n8n-workflow';
-import { BinaryDataService } from '@/BinaryData/BinaryData.service';
+import { ExpressionError } from 'n8n-workflow';
 import nock from 'nock';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import type { SecureContextOptions } from 'tls';
 import Container from 'typedi';
-import type { Agent } from 'https';
+
+import { BinaryDataService } from '@/BinaryData/BinaryData.service';
+import { InstanceSettings } from '@/InstanceSettings';
+import {
+	cleanupParameterData,
+	copyInputItems,
+	ensureType,
+	getBinaryDataBuffer,
+	isFilePathBlocked,
+	parseIncomingMessage,
+	parseRequestObject,
+	proxyRequestToAxios,
+	removeEmptyBody,
+	setBinaryDataBuffer,
+} from '@/NodeExecuteFunctions';
 
 const temporaryDir = mkdtempSync(join(tmpdir(), 'n8n'));
 
@@ -236,6 +249,16 @@ describe('NodeExecuteFunctions', () => {
 			hooks.executeHookFunctions.mockClear();
 		});
 
+		test('should rethrow an error with `status` property', async () => {
+			nock(baseUrl).get('/test').reply(400);
+
+			try {
+				await proxyRequestToAxios(workflow, additionalData, node, `${baseUrl}/test`);
+			} catch (error) {
+				expect(error.status).toEqual(400);
+			}
+		});
+
 		test('should not throw if the response status is 200', async () => {
 			nock(baseUrl).get('/test').reply(200);
 			await proxyRequestToAxios(workflow, additionalData, node, `${baseUrl}/test`);
@@ -370,6 +393,42 @@ describe('NodeExecuteFunctions', () => {
 			expect((axiosOptions.httpsAgent as Agent).options.servername).toEqual('example.de');
 		});
 
+		describe('should set SSL certificates', () => {
+			const agentOptions: SecureContextOptions = {
+				ca: '-----BEGIN CERTIFICATE-----\nTEST\n-----END CERTIFICATE-----',
+			};
+			const requestObject: IRequestOptions = {
+				method: 'GET',
+				uri: 'https://example.de',
+				agentOptions,
+			};
+
+			test('on regular requests', async () => {
+				const axiosOptions = await parseRequestObject(requestObject);
+				expect((axiosOptions.httpsAgent as Agent).options).toEqual({
+					servername: 'example.de',
+					...agentOptions,
+					noDelay: true,
+					path: null,
+				});
+			});
+
+			test('on redirected requests', async () => {
+				const axiosOptions = await parseRequestObject(requestObject);
+				expect(axiosOptions.beforeRedirect).toBeDefined;
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const redirectOptions: Record<string, any> = { agents: {}, hostname: 'example.de' };
+				axiosOptions.beforeRedirect!(redirectOptions, mock());
+				expect(redirectOptions.agent).toEqual(redirectOptions.agents.https);
+				expect((redirectOptions.agent as Agent).options).toEqual({
+					servername: 'example.de',
+					...agentOptions,
+					noDelay: true,
+					path: null,
+				});
+			});
+		});
+
 		describe('when followRedirect is true', () => {
 			test.each(['GET', 'HEAD'] as IHttpRequestMethods[])(
 				'should set maxRedirects on %s ',
@@ -408,6 +467,39 @@ describe('NodeExecuteFunctions', () => {
 					expect(axiosOptions.maxRedirects).toEqual(1234);
 				},
 			);
+		});
+	});
+
+	describe('cleanupParameterData', () => {
+		it('should stringify Luxon dates in-place', () => {
+			const input = { x: 1, y: DateTime.now() as unknown as NodeParameterValue };
+			expect(typeof input.y).toBe('object');
+			cleanupParameterData(input);
+			expect(typeof input.y).toBe('string');
+		});
+
+		it('should stringify plain Luxon dates in-place', () => {
+			const input = {
+				x: 1,
+				y: toPlainObject(DateTime.now()),
+			};
+			expect(typeof input.y).toBe('object');
+			cleanupParameterData(input);
+			expect(typeof input.y).toBe('string');
+		});
+
+		it('should handle objects with nameless constructors', () => {
+			const input = { x: 1, y: { constructor: {} } as NodeParameterValue };
+			expect(typeof input.y).toBe('object');
+			cleanupParameterData(input);
+			expect(typeof input.y).toBe('object');
+		});
+
+		it('should handle objects without a constructor', () => {
+			const input = { x: 1, y: { constructor: undefined } as unknown as NodeParameterValue };
+			expect(typeof input.y).toBe('object');
+			cleanupParameterData(input);
+			expect(typeof input.y).toBe('object');
 		});
 	});
 
@@ -457,5 +549,128 @@ describe('NodeExecuteFunctions', () => {
 			expect(output[0].a).toEqual(input.a);
 			expect(output[0].a === input.a).toEqual(false);
 		});
+	});
+
+	describe('removeEmptyBody', () => {
+		test.each(['GET', 'HEAD', 'OPTIONS'] as IHttpRequestMethods[])(
+			'Should remove empty body for %s',
+			async (method) => {
+				const requestOptions = {
+					method,
+					body: {},
+				} as IHttpRequestOptions | IRequestOptions;
+				removeEmptyBody(requestOptions);
+				expect(requestOptions.body).toEqual(undefined);
+			},
+		);
+
+		test.each(['GET', 'HEAD', 'OPTIONS'] as IHttpRequestMethods[])(
+			'Should not remove non-empty body for %s',
+			async (method) => {
+				const requestOptions = {
+					method,
+					body: { test: true },
+				} as IHttpRequestOptions | IRequestOptions;
+				removeEmptyBody(requestOptions);
+				expect(requestOptions.body).toEqual({ test: true });
+			},
+		);
+
+		test.each(['POST', 'PUT', 'PATCH', 'DELETE'] as IHttpRequestMethods[])(
+			'Should not remove empty body for %s',
+			async (method) => {
+				const requestOptions = {
+					method,
+					body: {},
+				} as IHttpRequestOptions | IRequestOptions;
+				removeEmptyBody(requestOptions);
+				expect(requestOptions.body).toEqual({});
+			},
+		);
+	});
+
+	describe('ensureType', () => {
+		it('throws error for null value', () => {
+			expect(() => ensureType('string', null, 'myParam')).toThrowError(
+				new ExpressionError("Parameter 'myParam' must not be null"),
+			);
+		});
+
+		it('throws error for undefined value', () => {
+			expect(() => ensureType('string', undefined, 'myParam')).toThrowError(
+				new ExpressionError("Parameter 'myParam' could not be 'undefined'"),
+			);
+		});
+
+		it('returns string value without modification', () => {
+			const value = 'hello';
+			const expectedValue = value;
+			const result = ensureType('string', value, 'myParam');
+			expect(result).toBe(expectedValue);
+		});
+
+		it('returns number value without modification', () => {
+			const value = 42;
+			const expectedValue = value;
+			const result = ensureType('number', value, 'myParam');
+			expect(result).toBe(expectedValue);
+		});
+
+		it('returns boolean value without modification', () => {
+			const value = true;
+			const expectedValue = value;
+			const result = ensureType('boolean', value, 'myParam');
+			expect(result).toBe(expectedValue);
+		});
+
+		it('converts object to string if toType is string', () => {
+			const value = { name: 'John' };
+			const expectedValue = JSON.stringify(value);
+			const result = ensureType('string', value, 'myParam');
+			expect(result).toBe(expectedValue);
+		});
+
+		it('converts string to number if toType is number', () => {
+			const value = '10';
+			const expectedValue = 10;
+			const result = ensureType('number', value, 'myParam');
+			expect(result).toBe(expectedValue);
+		});
+
+		it('throws error for invalid conversion to number', () => {
+			const value = 'invalid';
+			expect(() => ensureType('number', value, 'myParam')).toThrowError(
+				new ExpressionError("Parameter 'myParam' must be a number, but we got 'invalid'"),
+			);
+		});
+
+		it('parses valid JSON string to object if toType is object', () => {
+			const value = '{"name": "Alice"}';
+			const expectedValue = JSON.parse(value);
+			const result = ensureType('object', value, 'myParam');
+			expect(result).toEqual(expectedValue);
+		});
+
+		it('throws error for invalid JSON string to object conversion', () => {
+			const value = 'invalid_json';
+			expect(() => ensureType('object', value, 'myParam')).toThrowError(
+				new ExpressionError("Parameter 'myParam' could not be parsed"),
+			);
+		});
+
+		it('throws error for non-array value if toType is array', () => {
+			const value = { name: 'Alice' };
+			expect(() => ensureType('array', value, 'myParam')).toThrowError(
+				new ExpressionError("Parameter 'myParam' must be an array, but we got object"),
+			);
+		});
+	});
+});
+
+describe('isFilePathBlocked', () => {
+	test('should return true for static cache dir', () => {
+		const filePath = Container.get(InstanceSettings).staticCacheDir;
+
+		expect(isFilePathBlocked(filePath)).toBe(true);
 	});
 });

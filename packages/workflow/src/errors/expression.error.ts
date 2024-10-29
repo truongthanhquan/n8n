@@ -1,10 +1,11 @@
-import type { IDataObject } from '../Interfaces';
 import { ExecutionBaseError } from './abstract/execution-base.error';
+import type { IDataObject } from '../Interfaces';
 
 export interface ExpressionErrorOptions {
 	cause?: Error;
 	causeDetailed?: string;
 	description?: string;
+	descriptionKey?: string;
 	descriptionTemplate?: string;
 	functionality?: 'pairedItem';
 	itemIndex?: number;
@@ -38,6 +39,7 @@ export class ExpressionError extends ExecutionBaseError {
 		const allowedKeys = [
 			'causeDetailed',
 			'descriptionTemplate',
+			'descriptionKey',
 			'functionality',
 			'itemIndex',
 			'messageTemplate',

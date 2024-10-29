@@ -1,75 +1,5 @@
-<template>
-	<div>
-		<div
-			v-for="group in logStreamingStore.items[destinationId]?.eventGroups"
-			:key="group.name"
-			shadow="never"
-		>
-			<!-- <template #header> -->
-			<Checkbox
-				:model-value="group.selected"
-				:indeterminate="!group.selected && group.indeterminate"
-				:disabled="readonly"
-				@update:modelValue="onInput"
-				@change="onCheckboxChecked(group.name, $event)"
-			>
-				<strong>{{ groupLabelName(group.name) }}</strong>
-				<n8n-tooltip
-					v-if="groupLabelInfo(group.name)"
-					placement="top"
-					:popper-class="$style.tooltipPopper"
-					class="ml-xs"
-				>
-					<n8n-icon icon="question-circle" size="small" class="ml-4xs" />
-					<template #content>
-						{{ groupLabelInfo(group.name) }}
-					</template>
-				</n8n-tooltip>
-			</Checkbox>
-			<Checkbox
-				v-if="group.name === 'n8n.audit'"
-				:model-value="logStreamingStore.items[destinationId]?.destination.anonymizeAuditMessages"
-				:disabled="readonly"
-				@update:modelValue="onInput"
-				@change="anonymizeAuditMessagesChanged"
-			>
-				{{ $locale.baseText('settings.log-streaming.tab.events.anonymize') }}
-				<n8n-tooltip placement="top" :popper-class="$style.tooltipPopper">
-					<n8n-icon icon="question-circle" size="small" class="ml-4xs" />
-					<template #content>
-						{{ $locale.baseText('settings.log-streaming.tab.events.anonymize.info') }}
-					</template>
-				</n8n-tooltip>
-			</Checkbox>
-			<!-- </template> -->
-			<ul :class="$style.eventList">
-				<li
-					v-for="event in group.children"
-					:key="event.name"
-					:class="`${$style.eventListItem} ${group.selected ? $style.eventListItemDisabled : ''}`"
-				>
-					<Checkbox
-						:model-value="event.selected || group.selected"
-						:indeterminate="event.indeterminate"
-						:disabled="group.selected || readonly"
-						@update:modelValue="onInput"
-						@change="onCheckboxChecked(event.name, $event)"
-					>
-						{{ event.label }}
-						<n8n-tooltip placement="top" :popper-class="$style.tooltipPopper">
-							<template #content>
-								{{ event.name }}
-							</template>
-						</n8n-tooltip>
-					</Checkbox>
-				</li>
-			</ul>
-		</div>
-	</div>
-</template>
-
 <script lang="ts">
-import { ElCheckbox as Checkbox } from 'element-plus';
+import { ElCheckbox as Checkbox, type CheckboxValueType } from 'element-plus';
 import { mapStores } from 'pinia';
 import type { BaseTextKey } from '@/plugins/i18n';
 import { useLogStreamingStore } from '@/stores/logStreaming.store';
@@ -101,12 +31,13 @@ export default {
 		onInput() {
 			this.$emit('input');
 		},
-		onCheckboxChecked(eventName: string, checked: boolean) {
-			this.logStreamingStore.setSelectedInGroup(this.destinationId, eventName, checked);
+		onCheckboxChecked(eventName: string, checked: CheckboxValueType) {
+			this.logStreamingStore.setSelectedInGroup(this.destinationId, eventName, Boolean(checked));
 			this.$forceUpdate();
 		},
-		anonymizeAuditMessagesChanged(value: boolean) {
-			this.logStreamingStore.items[this.destinationId].destination.anonymizeAuditMessages = value;
+		anonymizeAuditMessagesChanged(value: CheckboxValueType) {
+			this.logStreamingStore.items[this.destinationId].destination.anonymizeAuditMessages =
+				Boolean(value);
 			this.$emit('change', { name: 'anonymizeAuditMessages', node: this.destinationId, value });
 			this.$forceUpdate();
 		},
@@ -122,6 +53,76 @@ export default {
 	},
 };
 </script>
+
+<template>
+	<div>
+		<div
+			v-for="group in logStreamingStore.items[destinationId]?.eventGroups"
+			:key="group.name"
+			shadow="never"
+		>
+			<!-- <template #header> -->
+			<Checkbox
+				:model-value="group.selected"
+				:indeterminate="!group.selected && group.indeterminate"
+				:disabled="readonly"
+				@update:model-value="onInput"
+				@change="onCheckboxChecked(group.name, $event)"
+			>
+				<strong>{{ groupLabelName(group.name) }}</strong>
+				<n8n-tooltip
+					v-if="groupLabelInfo(group.name)"
+					placement="top"
+					:popper-class="$style.tooltipPopper"
+					class="ml-xs"
+				>
+					<n8n-icon icon="question-circle" size="small" class="ml-4xs" />
+					<template #content>
+						{{ groupLabelInfo(group.name) }}
+					</template>
+				</n8n-tooltip>
+			</Checkbox>
+			<Checkbox
+				v-if="group.name === 'n8n.audit'"
+				:model-value="logStreamingStore.items[destinationId]?.destination.anonymizeAuditMessages"
+				:disabled="readonly"
+				@update:model-value="onInput"
+				@change="anonymizeAuditMessagesChanged"
+			>
+				{{ $locale.baseText('settings.log-streaming.tab.events.anonymize') }}
+				<n8n-tooltip placement="top" :popper-class="$style.tooltipPopper">
+					<n8n-icon icon="question-circle" size="small" class="ml-4xs" />
+					<template #content>
+						{{ $locale.baseText('settings.log-streaming.tab.events.anonymize.info') }}
+					</template>
+				</n8n-tooltip>
+			</Checkbox>
+			<!-- </template> -->
+			<ul :class="$style.eventList">
+				<li
+					v-for="event in group.children"
+					:key="event.name"
+					:class="`${$style.eventListItem} ${group.selected ? $style.eventListItemDisabled : ''}`"
+				>
+					<Checkbox
+						:model-value="event.selected || group.selected"
+						:indeterminate="event.indeterminate"
+						:disabled="group.selected || readonly"
+						@update:model-value="onInput"
+						@change="onCheckboxChecked(event.name, $event)"
+					>
+						{{ event.label }}
+						<n8n-tooltip placement="top" :popper-class="$style.tooltipPopper">
+							<template #content>
+								{{ event.name }}
+							</template>
+						</n8n-tooltip>
+					</Checkbox>
+				</li>
+			</ul>
+		</div>
+	</div>
+</template>
 
 <style lang="scss" module>
 .eventListCard {
